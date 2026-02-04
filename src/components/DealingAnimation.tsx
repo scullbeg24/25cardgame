@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { View, Text, Dimensions, StyleSheet } from "react-native";
 import Animated, {
   useSharedValue,
@@ -10,6 +10,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import type { Card } from "../game-logic/cards";
+import { playCardDeal } from "../utils/sounds";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -37,6 +38,7 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
   const scale = useSharedValue(0.3);
   const opacity = useSharedValue(1);
   const rotate = useSharedValue(0);
+  const hasPlayedSound = useRef(false);
 
   const targetPos = PLAYER_POSITIONS[playerIndex];
   // Stagger cards slightly within each player's hand
@@ -45,6 +47,15 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
   useEffect(() => {
     const delay = index * DELAY_BETWEEN_CARDS;
     
+    // Play deal sound for this card (staggered)
+    const soundTimeout = setTimeout(() => {
+      if (!hasPlayedSound.current) {
+        hasPlayedSound.current = true;
+        playCardDeal();
+      }
+    }, delay);
+    
+    // Animate card moving to player position
     translateX.value = withDelay(
       delay,
       withTiming(targetPos.x + cardOffset, {
@@ -85,7 +96,9 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
         }
       })
     );
-  }, []);
+
+    return () => clearTimeout(soundTimeout);
+  }, [index, targetPos, cardOffset, isLastCard, onComplete]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [

@@ -177,48 +177,46 @@ export default function GameTable({
             }}
           />
           
-          {/* Trump Card Box - positioned in top-right corner */}
-          {trumpCard && (
-            <View
-              style={{
-                position: "absolute",
-                top: 12,
-                right: 12,
-                alignItems: "center",
-                zIndex: 10,
-              }}
-            >
+          {/* Center play area - trump card on left, played cards on right */}
+          <View className="flex-1 flex-row justify-center items-center min-h-[180px]">
+            {/* Trump Card Box */}
+            {trumpCard && (
               <View
                 style={{
-                  backgroundColor: "rgba(0,0,0,0.35)",
-                  borderRadius: borderRadius.md,
-                  padding: 6,
-                  paddingTop: 4,
-                  borderWidth: 1,
-                  borderColor: colors.gold.dark + "60",
-                  ...shadows.extruded.small,
+                  alignItems: "center",
+                  marginRight: 16,
                 }}
               >
-                <Text
+                <View
                   style={{
-                    color: colors.gold.primary,
-                    fontSize: 9,
-                    fontWeight: "600",
-                    textAlign: "center",
-                    marginBottom: 4,
-                    letterSpacing: 1,
-                    textTransform: "uppercase",
+                    backgroundColor: "rgba(0,0,0,0.35)",
+                    borderRadius: borderRadius.md,
+                    padding: 6,
+                    paddingTop: 4,
+                    borderWidth: 1,
+                    borderColor: colors.gold.dark + "60",
+                    ...shadows.extruded.small,
                   }}
                 >
-                  Trump
-                </Text>
-                <Card card={trumpCard} faceUp size="small" />
+                  <Text
+                    style={{
+                      color: colors.gold.primary,
+                      fontSize: 9,
+                      fontWeight: "600",
+                      textAlign: "center",
+                      marginBottom: 4,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Trump
+                  </Text>
+                  <Card card={trumpCard} faceUp size="small" />
+                </View>
               </View>
-            </View>
-          )}
-          
-          {/* Center play area */}
-          <View className="flex-1 justify-center items-center min-h-[180px]">
+            )}
+            
+            {/* Played Cards Area */}
             {currentTrick.length === 0 ? (
               <View className="items-center">
                 <View 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { View, Text, StatusBar, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
@@ -16,6 +16,7 @@ import Button from "../components/Button";
 import { useGameStore } from "../store/gameStore";
 import Confetti from "../components/Confetti";
 import Sparkle from "../components/Sparkle";
+import { playVictoryFanfare, playDefeatSound } from "../utils/sounds";
 import { colors, shadows, borderRadius } from "../theme";
 import type { RootStackParamList } from "./HomeScreen";
 
@@ -29,9 +30,23 @@ export default function GameOverScreen() {
   const { scores, handsWon, resetGame } = useGameStore();
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
+  const hasPlayedSound = useRef(false);
 
   const winner = handsWon.team1 >= 5 ? 1 : handsWon.team2 >= 5 ? 2 : null;
   const youWon = winner === 1;
+
+  // Play game end sound once
+  useEffect(() => {
+    if (!hasPlayedSound.current) {
+      hasPlayedSound.current = true;
+      if (youWon) {
+        // Delay victory fanfare to sync with animations
+        setTimeout(() => playVictoryFanfare(), 600);
+      } else {
+        setTimeout(() => playDefeatSound(), 500);
+      }
+    }
+  }, [youWon]);
 
   // Animation values
   const cardScale = useSharedValue(0);

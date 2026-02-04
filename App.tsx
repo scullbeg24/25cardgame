@@ -9,6 +9,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import HomeScreen from "./src/screens/HomeScreen";
 import GameSetupScreen from "./src/screens/GameSetupScreen";
 import { useSettingsStore } from "./src/store/settingsStore";
+import { setSoundEnabled } from "./src/utils/sounds";
 import GameScreen from "./src/screens/GameScreen";
 import RulesScreen from "./src/screens/RulesScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
@@ -17,6 +18,13 @@ import GameOverScreen from "./src/screens/GameOverScreen";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  // Sync sound settings with sound manager
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+  
+  useEffect(() => {
+    setSoundEnabled(soundEnabled);
+  }, [soundEnabled]);
+
   useEffect(() => {
     useSettingsStore.getState().load();
   }, []);

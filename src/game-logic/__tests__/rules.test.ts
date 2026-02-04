@@ -27,7 +27,7 @@ describe("rules", () => {
       expect(result.valid).toBe(false);
       expect(result.error).toContain("not in your hand");
     });
-    it("must follow suit when able", () => {
+    it("must follow suit when able (non-trump card)", () => {
       const ledCard: Card = { suit: "hearts", rank: "K" };
       const hand: Card[] = [
         { suit: "hearts", rank: "2" },
@@ -41,6 +41,36 @@ describe("rules", () => {
       );
       expect(result.valid).toBe(false);
       expect(result.error).toContain("follow");
+    });
+
+    it("allows playing trump even when holding the led suit", () => {
+      const ledCard: Card = { suit: "hearts", rank: "K" };
+      const hand: Card[] = [
+        { suit: "hearts", rank: "2" },
+        { suit: "diamonds", rank: "J" }, // Jack of trump
+      ];
+      const result = isLegalPlay(
+        { suit: "diamonds", rank: "J" },
+        hand,
+        [ledCard],
+        "diamonds" // diamonds is trump
+      );
+      expect(result.valid).toBe(true);
+    });
+
+    it("allows playing 5 of hearts (always trump) even when holding the led suit", () => {
+      const ledCard: Card = { suit: "clubs", rank: "K" };
+      const hand: Card[] = [
+        { suit: "clubs", rank: "2" },
+        { suit: "hearts", rank: "5" }, // 5 of hearts is always trump
+      ];
+      const result = isLegalPlay(
+        { suit: "hearts", rank: "5" },
+        hand,
+        [ledCard],
+        "spades" // spades is trump, but 5 of hearts is always trump
+      );
+      expect(result.valid).toBe(true);
     });
   });
 

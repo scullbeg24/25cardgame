@@ -5,12 +5,15 @@ import {
   View,
 } from "react-native";
 import { colors, shadows, borderRadius } from "../theme";
+import { playButtonTap } from "../utils/sounds";
 
 interface ButtonProps extends Omit<PressableProps, "style"> {
   title: string;
   variant?: "primary" | "secondary" | "outline";
   size?: "small" | "medium" | "large";
   style?: PressableProps["style"];
+  /** Disable sound effect for this button */
+  silent?: boolean;
 }
 
 const sizeConfig = {
@@ -24,9 +27,16 @@ export default function Button({
   variant = "primary",
   size = "large",
   style,
+  silent = false,
   ...props
 }: ButtonProps) {
   const dims = sizeConfig[size];
+
+  const handlePressIn = () => {
+    if (!silent) {
+      playButtonTap();
+    }
+  };
 
   const getBackgroundColor = (pressed: boolean) => {
     switch (variant) {
@@ -65,6 +75,7 @@ export default function Button({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
+      onPressIn={handlePressIn}
       {...props}
       style={({ pressed }) => [
         {

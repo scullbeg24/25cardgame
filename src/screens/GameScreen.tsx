@@ -9,6 +9,18 @@ import type { Card, Suit } from "../game-logic/cards";
 import { isTrump } from "../game-logic/cards";
 import { selectAICard, getAIDelay, type TrickEntry } from "../game-logic/ai";
 import { HUMAN_PLAYER_INDEX } from "../utils/constants";
+import {
+  playCardPlay,
+  playCardDeal,
+  playTrickWon,
+  playHandWon,
+  playTrumpReveal,
+  playRob,
+  playInvalidMove,
+  playScoreMilestone,
+  playTopTrump,
+  playPerfectTrick,
+} from "../utils/sounds";
 import GameTable from "../components/GameTable";
 import GameHeader from "../components/GameHeader";
 import BottomPanel from "../components/BottomPanel";
@@ -84,6 +96,8 @@ export default function GameScreen() {
   const [showComebackWin, setShowComebackWin] = useState(false);
   const [comebackTeam, setComebackTeam] = useState<0 | 1>(0);
   const [trickWinnerIndex, setTrickWinnerIndex] = useState(0);
+  const [handWinOverlayComplete, setHandWinOverlayComplete] = useState(true);
+  const [pendingHandComplete, setPendingHandComplete] = useState(false);
   
   // Score history for comeback detection
   const scoreHistory = useRef<Array<{ team1: number; team2: number }>>([]);
@@ -160,6 +174,9 @@ export default function GameScreen() {
         : players[firstPlayerThisTrick]?.name ?? "Player";
       logTrickWon(winnerName, 5);
       
+      // Play trick win sound
+      playTrickWon();
+      
       // Show trick win badge near the winner
       const winnerTeamIndex = (firstPlayerThisTrick % 2) as 0 | 1;
       setTrickWinTeam(winnerTeamIndex);
@@ -168,7 +185,10 @@ export default function GameScreen() {
       
       // Check for perfect trick (all trumps)
       if (prevTrickCards.current.length === 4 && isPerfectTrumpTrick(prevTrickCards.current, trumpSuit)) {
-        setTimeout(() => setShowPerfectTrick(true), 500);
+        setTimeout(() => {
+          setShowPerfectTrick(true);
+          playPerfectTrick();
+        }, 500);
       }
       
       const timer = setTimeout(() => setLastTrickWinner(null), 2000);
@@ -198,6 +218,7 @@ export default function GameScreen() {
       setScoreMilestone(team1Milestone);
       setMilestoneTeam(0);
       setShowScoreMilestone(true);
+      playScoreMilestone();
     }
     
     // Team 2 milestone
@@ -206,6 +227,7 @@ export default function GameScreen() {
       setScoreMilestone(team2Milestone);
       setMilestoneTeam(1);
       setShowScoreMilestone(true);
+      playScoreMilestone();
     }
     
     // Track score history for comeback detection
@@ -229,18 +251,20 @@ export default function GameScreen() {
         setTopTrumpIsYou(lastPlay.playerIndex === HUMAN_PLAYER_INDEX);
         setTopTrumpPlayerIndex(lastPlay.playerIndex);
         setShowTopTrump(true);
+        playTopTrump();
       }
     }
   }, [currentTrick.length, currentTrick, trumpSuit, players]);
 
   // Trigger dealing animation when game starts or new hand
+  // Only start dealing after HandWinOverlay animation has completed
   useEffect(() => {
     if (gamePhase === "playing" || gamePhase === "robbing") {
-      if (!dealingComplete && players.every(p => p.hand.length > 0)) {
+      if (!dealingComplete && players.every(p => p.hand.length > 0) && handWinOverlayComplete) {
         setIsDealing(true);
       }
     }
-  }, [gamePhase, players, dealingComplete]);
+  }, [gamePhase, players, dealingComplete, handWinOverlayComplete]);
 
   const handleDealingComplete = () => {
     setIsDealing(false);
@@ -249,6 +273,7 @@ export default function GameScreen() {
     if (trumpCard) {
       setShowTrumpReveal(true);
       logTrumpRevealed(trumpCard);
+      playTrumpReveal();
     }
   };
 
@@ -287,9 +312,13 @@ export default function GameScreen() {
       // Log hand win
       logHandWon(winningTeam, Math.max(scores.team1, scores.team2));
       
+      // Play hand win sound
+      playHandWon();
+      
       // Show hand win overlay
       setHandWinTeam(winningTeam);
       setHandWinScores({ team1: scores.team1, team2: scores.team2 });
+      setHandWinOverlayComplete(false); // Mark overlay as in-progress
       setShowHandWinOverlay(true);
       
       // Check for comeback win
@@ -335,11 +364,21 @@ export default function GameScreen() {
     }
   }, [gamePhase, completeTrick]);
 
+  // When hand is complete, wait for the HandWinOverlay to finish before dealing next hand
   useEffect(() => {
     if (gamePhase === "handComplete") {
+      // Mark that we need to complete the hand after overlay finishes
+      setPendingHandComplete(true);
+    }
+  }, [gamePhase]);
+
+  // Only complete the hand once the HandWinOverlay animation has finished
+  useEffect(() => {
+    if (pendingHandComplete && handWinOverlayComplete && !showHandWinOverlay) {
+      setPendingHandComplete(false);
       completeHand();
     }
-  }, [gamePhase, completeHand]);
+  }, [pendingHandComplete, handWinOverlayComplete, showHandWinOverlay, completeHand]);
 
   useEffect(() => {
     if (gamePhase === "gameOver") {
@@ -388,10 +427,11 @@ export default function GameScreen() {
       
       robPack(cardToDiscard);
       logRobAccepted(robber.name, trumpCard);
-      // Show rob badge for AI
+      // Show rob badge for AI and play sound
       setRobPlayerName(robber.name);
       setRobIsYou(false);
       setShowRobBadge(true);
+      playRob();
     }, 800);
     
     return () => clearTimeout(t);
@@ -431,6 +471,7 @@ export default function GameScreen() {
       const card = selectAICard(context, player.difficulty ?? "medium");
       playCard(currentPlayer, card);
       logCardPlayed(player.name, card);
+      playCardPlay();
     }, delay);
 
     return () => {
@@ -464,9 +505,11 @@ export default function GameScreen() {
       const errorMessage = getInvalidPlayMessage(result.error);
       showAlert("Invalid Play", errorMessage);
       logInvalidPlay("You", result.error);
+      playInvalidMove();
     } else if (!result || result.success !== false) {
-      // Card was played successfully - log it
+      // Card was played successfully - log it and play sound
       logCardPlayed("You", card);
+      playCardPlay();
     }
   };
   
@@ -490,10 +533,11 @@ export default function GameScreen() {
     if (trumpCard) {
       robPack(cardToDiscard);
       logRobAccepted("You", trumpCard);
-      // Show rob badge
+      // Show rob badge and play sound
       setRobPlayerName("You");
       setRobIsYou(true);
       setShowRobBadge(true);
+      playRob();
     }
   }, [robPack, trumpCard, logRobAccepted]);
 
@@ -682,7 +726,10 @@ export default function GameScreen() {
           isYourTeam={handWinTeam === 1}
           handsWon={handsWon}
           finalScore={handWinScores}
-          onComplete={() => setShowHandWinOverlay(false)}
+          onComplete={() => {
+            setShowHandWinOverlay(false);
+            setHandWinOverlayComplete(true); // Signal that overlay animation is done
+          }}
         />
         
         {/* Comeback Win Badge - near center */}

@@ -116,15 +116,17 @@ The dealer may "rob the pack" if they hold the Ace of the trump suit shown.
 
 ### Following Suit Rules
 **Standard Rule:**
-- Players MUST follow suit if able
-- If cannot follow suit, may play any card (including trump)
+- Players may ALWAYS play a trump card, regardless of what suit was led
+- If not playing trump, players MUST follow suit if able
+- If cannot follow suit and not playing trump, may play any card
 
 **Trump Suit Led:**
 - Must play trump if holding any trump
 - If no trump, may play any card
 
 **Non-Trump Suit Led:**
-- Must follow suit if holding that suit
+- May follow suit OR play trump (trump is always a valid play)
+- If not playing trump, must follow suit if holding that suit
 - Exception: If holding ONLY the top three trumps (5♥, J♥/trump, A♥), player is NOT required to play them on a non-trump lead
 - This is the "reneging privilege" for the three highest trumps
 

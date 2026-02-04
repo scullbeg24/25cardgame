@@ -196,12 +196,14 @@ export function isLegalPlay(
   });
 
   if (hasLedSuitIncludingAlwaysTrump) {
-    // Must follow suit
-    if (isAlwaysTrump(card)) {
-      return { valid: false, error: "You must follow the led suit" };
+    // Must follow suit OR play trump
+    // Playing trump is always allowed
+    if (isTrump(card, trumpSuit)) {
+      return { valid: true };
     }
+    // Must follow suit if not playing trump
     if (card.suit !== effectiveLedSuit) {
-      return { valid: false, error: "You must follow the led suit" };
+      return { valid: false, error: "You must follow the led suit or play trump" };
     }
     return { valid: true };
   }
