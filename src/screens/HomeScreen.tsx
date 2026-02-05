@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from "react";
-import { View, Text, StatusBar, Animated, Easing, Dimensions } from "react-native";
+import { View, Text, StatusBar, Animated, Easing, Dimensions, TouchableOpacity } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Button from "../components/Button";
 import { useGameStore } from "../store/gameStore";
+import { useAuthStore } from "../store/authStore";
 import { colors, shadows, borderRadius } from "../theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 export type RootStackParamList = {
   Home: undefined;
+  Profile: undefined;
+  Friends: undefined;
+  MultiplayerMenu: undefined;
   GameSetup: undefined;
   Game: undefined;
   Rules: undefined;
@@ -205,6 +209,7 @@ function Sparkle({ x, y, delay }: { x: number; y: number; delay: number }) {
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavProp>();
+  const { userProfile } = useAuthStore();
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const loadGame = useGameStore((s) => s.loadGame);
   const hasSavedGameFn = useGameStore((s) => s.hasSavedGame);
@@ -337,6 +342,68 @@ export default function HomeScreen() {
         ))}
 
         <View className="flex-1 justify-center items-center px-6">
+          {/* User Profile Header */}
+          {userProfile && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 20,
+                left: 20,
+                right: 20,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Profile')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: colors.background.surface,
+                  borderRadius: borderRadius.full,
+                  padding: 8,
+                  paddingRight: 16,
+                  ...shadows.extruded.medium,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: colors.gold.dark,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginRight: 10,
+                  }}
+                >
+                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.gold.primary }}>
+                    {userProfile.displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text.primary }}>
+                  {userProfile.displayName}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Friends')}
+                style={{
+                  backgroundColor: colors.background.surface,
+                  borderRadius: borderRadius.full,
+                  width: 44,
+                  height: 44,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  ...shadows.extruded.medium,
+                }}
+              >
+                <Text style={{ fontSize: 24 }}>👥</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Logo/Title area with soft UI card */}
           <Animated.View
             style={{
@@ -433,7 +500,12 @@ export default function HomeScreen() {
             }}
           >
             <Button
-              title="New Game"
+              title="🌐 Play Online"
+              onPress={() => navigation.navigate("MultiplayerMenu")}
+            />
+            <Button
+              title="Play vs Bots"
+              variant="secondary"
               onPress={() => navigation.navigate("GameSetup")}
             />
             {hasSavedGame && (
