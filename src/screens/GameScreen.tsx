@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, StatusBar, Dimensions } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { View, Text, StatusBar, Dimensions, Pressable, Modal, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useGameStore } from "../store/gameStore";
@@ -17,12 +17,10 @@ import {
   playTrumpReveal,
   playRob,
   playInvalidMove,
-  playScoreMilestone,
   playTopTrump,
   playPerfectTrick,
 } from "../utils/sounds";
 import GameTable from "../components/GameTable";
-import GameHeader from "../components/GameHeader";
 import BottomPanel from "../components/BottomPanel";
 import RobPrompt from "../components/RobPrompt";
 import DealingAnimation from "../components/DealingAnimation";
@@ -30,12 +28,13 @@ import AlertModal from "../components/AlertModal";
 import TrickWinBadge from "../components/TrickWinBadge";
 import HandWinOverlay from "../components/HandWinOverlay";
 import RobBadge from "../components/RobBadge";
-import ScoreMilestoneBadge from "../components/ScoreMilestoneBadge";
 import TrumpRevealAnimation from "../components/TrumpRevealAnimation";
 import TopTrumpBadge, { isTopTrump } from "../components/TopTrumpBadge";
 import PerfectTrickBadge, { isPerfectTrumpTrick } from "../components/PerfectTrickBadge";
 import ComebackWinBadge from "../components/ComebackWinBadge";
-import { colors } from "../theme";
+import NavigationHeader from "../components/NavigationHeader";
+import GameLog from "../components/GameLog";
+import { colors, borderRadius } from "../theme";
 import type { RootStackParamList } from "./HomeScreen";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -83,9 +82,6 @@ export default function GameScreen() {
   const [showRobBadge, setShowRobBadge] = useState(false);
   const [robPlayerName, setRobPlayerName] = useState("");
   const [robIsYou, setRobIsYou] = useState(false);
-  const [showScoreMilestone, setShowScoreMilestone] = useState(false);
-  const [scoreMilestone, setScoreMilestone] = useState<10 | 15 | 20 | 25>(10);
-  const [milestoneTeam, setMilestoneTeam] = useState<0 | 1>(0);
   const [showTrumpReveal, setShowTrumpReveal] = useState(false);
   const [showTopTrump, setShowTopTrump] = useState(false);
   const [topTrumpCard, setTopTrumpCard] = useState<Card | null>(null);
@@ -98,6 +94,7 @@ export default function GameScreen() {
   const [trickWinnerIndex, setTrickWinnerIndex] = useState(0);
   const [handWinOverlayComplete, setHandWinOverlayComplete] = useState(true);
   const [pendingHandComplete, setPendingHandComplete] = useState(false);
+  const [showHandHistory, setShowHandHistory] = useState(false);
   
   // Score history for comeback detection
   const scoreHistory = useRef<Array<{ team1: number; team2: number }>>([]);
@@ -202,39 +199,11 @@ export default function GameScreen() {
     prevTrickLength.current = currentTrick.length;
   }, [currentTrick.length, gamePhase, firstPlayerThisTrick, players, logTrickWon, trumpSuit, currentTrick]);
   
-  // Track score changes for milestones
+  // Track score history for comeback detection (no milestone badges)
   useEffect(() => {
-    const checkMilestone = (oldScore: number, newScore: number): 10 | 15 | 20 | 25 | null => {
-      const milestones = [10, 15, 20, 25] as const;
-      for (const m of milestones) {
-        if (oldScore < m && newScore >= m) return m;
-      }
-      return null;
-    };
-    
-    // Team 1 milestone
-    const team1Milestone = checkMilestone(prevScoresRef.current.team1, scores.team1);
-    if (team1Milestone) {
-      setScoreMilestone(team1Milestone);
-      setMilestoneTeam(0);
-      setShowScoreMilestone(true);
-      playScoreMilestone();
-    }
-    
-    // Team 2 milestone
-    const team2Milestone = checkMilestone(prevScoresRef.current.team2, scores.team2);
-    if (team2Milestone && !team1Milestone) {
-      setScoreMilestone(team2Milestone);
-      setMilestoneTeam(1);
-      setShowScoreMilestone(true);
-      playScoreMilestone();
-    }
-    
-    // Track score history for comeback detection
     if (scores.team1 !== prevScoresRef.current.team1 || scores.team2 !== prevScoresRef.current.team2) {
       scoreHistory.current.push({ team1: scores.team1, team2: scores.team2 });
     }
-    
     prevScoresRef.current = { team1: scores.team1, team2: scores.team2 };
   }, [scores.team1, scores.team2]);
   
@@ -308,27 +277,30 @@ export default function GameScreen() {
     if (totalHands > prevTotal && gamePhase !== "gameOver") {
       // Determine which team won
       const winningTeam: 1 | 2 = handsWon.team1 > prevHandsWon.current.team1 ? 1 : 2;
+      const winningScore = winningTeam === 1 ? scores.team1 : scores.team2;
       
       // Log hand win
-      logHandWon(winningTeam, Math.max(scores.team1, scores.team2));
+      logHandWon(winningTeam, winningScore);
       
-      // Play hand win sound
-      playHandWon();
-      
-      // Show hand win overlay
-      setHandWinTeam(winningTeam);
-      setHandWinScores({ team1: scores.team1, team2: scores.team2 });
-      setHandWinOverlayComplete(false); // Mark overlay as in-progress
-      setShowHandWinOverlay(true);
-      
-      // Check for comeback win
-      const wasTeamBehind = scoreHistory.current.some(s => {
-        if (winningTeam === 1) return s.team2 - s.team1 >= 10;
-        return s.team1 - s.team2 >= 10;
-      });
-      if (wasTeamBehind) {
-        setComebackTeam(winningTeam === 1 ? 0 : 1);
-        setTimeout(() => setShowComebackWin(true), 2000); // After hand win overlay
+      // Only celebrate (overlay, sound, comeback badge) when a team reaches 25 points
+      if (winningScore >= 25) {
+        playHandWon();
+        setHandWinTeam(winningTeam);
+        setHandWinScores({ team1: scores.team1, team2: scores.team2 });
+        setHandWinOverlayComplete(false);
+        setShowHandWinOverlay(true);
+        
+        const wasTeamBehind = scoreHistory.current.some(s => {
+          if (winningTeam === 1) return s.team2 - s.team1 >= 10;
+          return s.team1 - s.team2 >= 10;
+        });
+        if (wasTeamBehind) {
+          setComebackTeam(winningTeam === 1 ? 0 : 1);
+          setTimeout(() => setShowComebackWin(true), 2000);
+        }
+      } else {
+        // Hand won by fallback (pack exhausted) - no celebration, advance immediately
+        setHandWinOverlayComplete(true);
       }
       
       // Reset score history for next hand
@@ -557,52 +529,98 @@ export default function GameScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
       
-      <LinearGradient
-        colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
-        className="flex-1"
+      {/* Navigation header with Back, Hand History, and Home buttons */}
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader
+          title={isYourTurn ? "Your Turn" : `${currentPlayerName}'s Turn`}
+          rightAction={
+            <Pressable
+              onPress={() => setShowHandHistory(true)}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                backgroundColor: pressed ? colors.background.primary : colors.background.surface,
+                borderRadius: borderRadius.round,
+                borderWidth: 1,
+                borderColor: colors.gold.dark,
+              })}
+              accessibilityLabel="View hand play log"
+              accessibilityRole="button"
+            >
+              <Text style={{ fontSize: 14 }}>📋</Text>
+              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.gold.primary }}>
+                Log
+              </Text>
+            </Pressable>
+          }
+        />
+      </SafeAreaView>
+
+      {/* Game Log Modal - view full log (minimized during regular play) */}
+      <Modal
+        visible={showHandHistory}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowHandHistory(false)}
       >
-        {/* Game Header with game log */}
-        <GameHeader
-          currentPlayerName={currentPlayerName}
-          isYourTurn={isYourTurn}
-          onInfoPress={() => navigation.navigate("Rules")}
-          onMenuPress={() => navigation.navigate("Home")}
-        />
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "rgba(0, 0, 0, 0.7)",
+            padding: 20,
+          }}
+          activeOpacity={1}
+          onPress={() => setShowHandHistory(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 500 }}
+          >
+            <GameLog collapsible={false} maxHeight={400} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
-        {/* Main game table area */}
-        <View className="flex-1">
-          <GameTable
-            currentTrick={currentTrick}
-            playerNames={players.map((p) => p.name)}
-            currentPlayer={currentPlayer}
-            trumpSuit={trumpSuit}
-            trumpCard={trumpCard}
-            lastTrickWinner={lastTrickWinner}
-            leadPlayer={firstPlayerThisTrick}
-            dealer={dealer}
-            playerScores={playerScores}
-            playerCardCounts={players.map((p) => p.hand.length)}
-          />
-        </View>
-
-        {/* Dealing Animation Overlay */}
-        {isDealing && (
-          <DealingAnimation
-            playerHands={players.map(p => p.hand)}
-            onComplete={handleDealingComplete}
-          />
-        )}
-
-        {/* Bottom Panel with Scoreboard, Trumps, and Cards */}
-        <BottomPanel
-          players={bottomPanelPlayers}
-          trumpCard={trumpCard}
+      {/* Main game table area - MUST take the center space */}
+      <View style={{ flex: 1 }}>
+        <GameTable
+          currentTrick={currentTrick}
+          playerNames={players.map((p) => p.name)}
+          currentPlayer={currentPlayer}
           trumpSuit={trumpSuit}
-          cards={dealingComplete || !isDealing ? humanPlayer.hand : []}
-          validMoves={validMoves}
-          onCardSelect={handleCardSelect}
-          isYourTurn={isYourTurn && gamePhase === "playing"}
+          trumpCard={trumpCard}
+          lastTrickWinner={lastTrickWinner}
+          leadPlayer={firstPlayerThisTrick}
+          dealer={dealer}
+          playerScores={playerScores}
+          playerCardCounts={players.map((p) => p.hand.length)}
         />
+      </View>
+
+      {/* Dealing Animation Overlay */}
+      {isDealing && (
+        <DealingAnimation
+          playerHands={players.map(p => p.hand)}
+          onComplete={handleDealingComplete}
+        />
+      )}
+
+      {/* Bottom Panel with Cards and Score */}
+      <BottomPanel
+        players={bottomPanelPlayers}
+        trumpCard={trumpCard}
+        trumpSuit={trumpSuit}
+        cards={dealingComplete || !isDealing ? humanPlayer.hand : []}
+        validMoves={validMoves}
+        onCardSelect={handleCardSelect}
+        isYourTurn={isYourTurn && gamePhase === "playing"}
+      />
 
         {/* Rob the Ace Prompt Modal */}
         <RobPrompt
@@ -647,27 +665,6 @@ export default function GameScreen() {
               teamIndex={trickWinTeam}
               isYourTeam={trickWinTeam === 0}
               onHide={() => setShowTrickWinBadge(false)}
-            />
-          </View>
-        )}
-        
-        {/* Score Milestone Badge - near scoreboard (bottom left) */}
-        {showScoreMilestone && (
-          <View
-            style={{
-              position: "absolute",
-              bottom: 160,
-              left: 20,
-              zIndex: 50,
-            }}
-            pointerEvents="none"
-          >
-            <ScoreMilestoneBadge
-              visible={showScoreMilestone}
-              milestone={scoreMilestone}
-              teamIndex={milestoneTeam}
-              isYourTeam={milestoneTeam === 0}
-              onHide={() => setShowScoreMilestone(false)}
             />
           </View>
         )}
@@ -751,7 +748,6 @@ export default function GameScreen() {
             />
           </View>
         )}
-      </LinearGradient>
     </View>
   );
 }

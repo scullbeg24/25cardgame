@@ -88,7 +88,7 @@ export default function GameHeader({
   const expandedHeight = useSharedValue(0);
   const turnGlow = useSharedValue(0.8);
 
-  const maxExpandedHeight = 220;
+  const maxExpandedHeight = 180;
 
   // Animate turn indicator when it's your turn
   useEffect(() => {
@@ -123,8 +123,8 @@ export default function GameHeader({
     opacity: expandedHeight.value > 0 ? 1 : 0,
   }));
 
-  // Get recent logs for display (last 3)
-  const recentLogs = logs.slice(0, 3);
+  // Get most recent log entry only
+  const recentLog = logs[0];
 
   return (
     <View
@@ -134,64 +134,51 @@ export default function GameHeader({
         borderBottomColor: colors.softUI.border,
       }}
     >
-      {/* Main header row */}
+      {/* Compact header row */}
       <View
         style={{
           flexDirection: "row",
-          alignItems: "stretch",
+          alignItems: "center",
           justifyContent: "space-between",
-          paddingHorizontal: 12,
-          paddingVertical: 10,
+          paddingHorizontal: 8,
+          paddingVertical: 6,
         }}
       >
-        {/* Info Button */}
+        {/* Info Button - smaller */}
         <Pressable
           onPress={onInfoPress}
           style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: borderRadius.md,
+            width: 36,
+            height: 36,
+            borderRadius: borderRadius.sm,
             backgroundColor: pressed ? colors.background.primary : colors.background.surface,
             alignItems: "center",
             justifyContent: "center",
-            ...shadows.extruded.small,
             borderWidth: 1,
             borderColor: colors.softUI.border,
           })}
           accessibilityLabel="Game info"
           accessibilityRole="button"
         >
-          <Text style={{ color: colors.text.secondary, fontSize: 20, fontWeight: "600" }}>i</Text>
+          <Text style={{ color: colors.text.secondary, fontSize: 16, fontWeight: "600" }}>i</Text>
         </Pressable>
 
-        {/* Game Log & Turn Display - Center */}
+        {/* Turn Display & Log - Center - compact */}
         <TouchableOpacity
           onPress={() => setIsExpanded(!isExpanded)}
           activeOpacity={0.8}
           style={{
             flex: 1,
-            marginHorizontal: 10,
-            backgroundColor: colors.background.surface,
-            borderRadius: borderRadius.lg,
-            overflow: "hidden",
-            ...shadows.extruded.small,
+            marginHorizontal: 8,
+            backgroundColor: isYourTurn ? colors.gold.dark + "30" : colors.background.surface,
+            borderRadius: borderRadius.md,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
             borderWidth: 1,
-            borderColor: colors.gold.dark,
+            borderColor: isYourTurn ? colors.gold.primary : colors.softUI.border,
           }}
         >
-          {/* Turn indicator row */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              backgroundColor: isYourTurn ? colors.gold.dark + "40" : colors.background.primary,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.softUI.border,
-            }}
-          >
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Animated.Text
               style={[
                 turnStyle,
@@ -204,75 +191,60 @@ export default function GameHeader({
             >
               {isYourTurn ? "Your Turn" : `${currentPlayerName}'s Turn`}
             </Animated.Text>
-            <Text style={{ color: colors.text.muted, fontSize: 10 }}>
+            <Text style={{ color: colors.text.muted, fontSize: 9 }}>
               {isExpanded ? "▲" : "▼"}
             </Text>
           </View>
-
-          {/* Recent log entries */}
-          <View style={{ paddingVertical: 2 }}>
-            {recentLogs.length === 0 ? (
-              <Text
-                style={{
-                  color: colors.text.muted,
-                  fontSize: 11,
-                  textAlign: "center",
-                  paddingVertical: 8,
-                  fontStyle: "italic",
-                }}
-              >
-                Game starting...
-              </Text>
-            ) : (
-              recentLogs.map((entry) => (
-                <LogEntry key={entry.id} entry={entry} compact />
-              ))
-            )}
-          </View>
+          {recentLog && (
+            <Text
+              style={{ color: colors.text.muted, fontSize: 10, marginTop: 2 }}
+              numberOfLines={1}
+            >
+              {recentLog.message}
+            </Text>
+          )}
         </TouchableOpacity>
 
-        {/* Hand History Button */}
+        {/* Hand History Button - smaller */}
         <Pressable
           onPress={() => setShowHandHistory(true)}
           style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: borderRadius.md,
+            width: 36,
+            height: 36,
+            borderRadius: borderRadius.sm,
             backgroundColor: pressed ? colors.background.primary : colors.background.surface,
             alignItems: "center",
             justifyContent: "center",
-            ...shadows.extruded.small,
             borderWidth: 1,
             borderColor: colors.softUI.border,
-            marginRight: 8,
+            marginRight: 6,
           })}
-          accessibilityLabel="Hand history"
+          accessibilityLabel="View hand play log"
           accessibilityRole="button"
         >
-          <Text style={{ fontSize: 18 }}>📋</Text>
+          <Text style={{ fontSize: 14 }}>📋</Text>
         </Pressable>
 
-        {/* Menu Button */}
+        {/* Menu Button - smaller */}
         <Pressable
           onPress={onMenuPress}
           style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: borderRadius.md,
+            width: 36,
+            height: 36,
+            borderRadius: borderRadius.sm,
             backgroundColor: pressed ? colors.background.primary : colors.background.surface,
             alignItems: "center",
             justifyContent: "center",
-            ...shadows.extruded.small,
             borderWidth: 1,
             borderColor: colors.softUI.border,
           })}
           accessibilityLabel="Open menu"
           accessibilityRole="button"
         >
-          <View style={{ gap: 4 }}>
-            <View style={{ width: 18, height: 2, backgroundColor: colors.text.secondary, borderRadius: 1 }} />
-            <View style={{ width: 18, height: 2, backgroundColor: colors.text.secondary, borderRadius: 1 }} />
-            <View style={{ width: 18, height: 2, backgroundColor: colors.text.secondary, borderRadius: 1 }} />
+          <View style={{ gap: 3 }}>
+            <View style={{ width: 14, height: 2, backgroundColor: colors.text.secondary, borderRadius: 1 }} />
+            <View style={{ width: 14, height: 2, backgroundColor: colors.text.secondary, borderRadius: 1 }} />
+            <View style={{ width: 14, height: 2, backgroundColor: colors.text.secondary, borderRadius: 1 }} />
           </View>
         </Pressable>
       </View>
@@ -289,6 +261,39 @@ export default function GameHeader({
           },
         ]}
       >
+        {/* View Hand History button - prominent access to full play log */}
+        <Pressable
+          onPress={() => {
+            setIsExpanded(false);
+            setShowHandHistory(true);
+          }}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            paddingVertical: 8,
+            paddingHorizontal: 12,
+            marginHorizontal: 8,
+            marginTop: 6,
+            marginBottom: 4,
+            backgroundColor: pressed ? colors.gold.dark : colors.gold.dark + "40",
+            borderRadius: borderRadius.md,
+            borderWidth: 1,
+            borderColor: colors.gold.primary,
+          })}
+        >
+          <Text style={{ fontSize: 14 }}>📋</Text>
+          <Text
+            style={{
+              color: colors.gold.light,
+              fontSize: 13,
+              fontWeight: "600",
+            }}
+          >
+            View Hand Play Log
+          </Text>
+        </Pressable>
         <ScrollView
           ref={scrollViewRef}
           style={{ flex: 1 }}
