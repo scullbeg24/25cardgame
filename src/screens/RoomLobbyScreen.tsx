@@ -3,16 +3,17 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/authStore';
 import { useRoomStore } from '../store/roomStore';
 import { colors, shadows, borderRadius } from '../theme';
 import Button from '../components/Button';
+import NavigationHeader from '../components/NavigationHeader';
 import RoomCodeDisplay from '../components/RoomCodeDisplay';
 import PlayerSlot from '../components/PlayerSlot';
 
@@ -150,41 +151,14 @@ export default function RoomLobbyScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader title="Game Lobby" onBackPress={handleLeave} />
+      </SafeAreaView>
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={{ padding: 24 }}>
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-            <TouchableOpacity
-              onPress={handleLeave}
-              style={{
-                backgroundColor: colors.background.surface,
-                borderRadius: borderRadius.full,
-                width: 40,
-                height: 40,
-                justifyContent: 'center',
-                alignItems: 'center',
-                ...shadows.pressed.medium,
-              }}
-            >
-              <Text style={{ color: colors.text.primary, fontSize: 20 }}>←</Text>
-            </TouchableOpacity>
-            <Text
-              style={{
-                flex: 1,
-                textAlign: 'center',
-                fontSize: 24,
-                fontWeight: 'bold',
-                color: colors.text.primary,
-                marginRight: 40,
-              }}
-            >
-              Game Lobby
-            </Text>
-          </View>
-
           {/* Room Code Display */}
           <RoomCodeDisplay roomCode={currentRoom.roomCode} />
 

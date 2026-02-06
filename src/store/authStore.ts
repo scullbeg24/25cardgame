@@ -4,9 +4,8 @@
  */
 
 import { create } from 'zustand';
-import { firebaseAuth, firebaseFirestore, COLLECTIONS } from '../config/firebase.config';
+import { firebaseAuth, firebaseDatabase, RTDB_PATHS } from '../config/firebase.config';
 import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import { presenceService } from '../services/presenceService';
 
 export interface UserProfile {
   uid: string;
@@ -48,39 +47,36 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   // State
   user: null,
   userProfile: null,
-  isLoading: true,
+  isLoading: false,
   isAuthenticated: false,
   error: null,
 
   // Actions
   signUp: async (email: string, password: string, username: string) => {
     try {
-      set({ isLoading: true, error: null });
-
-      // Check if username is already taken
-      const usernameQuery = await firebaseFirestore
-        .collection(COLLECTIONS.USERS)
-        .where('username', '==', username.toLowerCase())
-        .get();
-
-      if (!usernameQuery.empty) {
-        throw new Error('Username is already taken');
+      if (!firebaseAuth) {
+        throw new Error('Firebase Auth not configured');
       }
 
-      // Create Firebase Auth user
+      set({ isLoading: true, error: null });
+
+      console.log('[Auth] SIMPLE AUTH ONLY - Creating user:', email);
+      
+      // ONLY CREATE AUTH USER - NO DATABASE AT ALL
       const userCredential = await firebaseAuth.createUserWithEmailAndPassword(
         email,
         password
       );
 
       const user = userCredential.user;
+      console.log('[Auth] SUCCESS! User created:', user.uid);
 
       // Update display name
       await user.updateProfile({
         displayName: username,
       });
 
-      // Create user profile in Firestore
+      // Create MINIMAL user profile - NO DATABASE
       const userProfile: UserProfile = {
         uid: user.uid,
         username: username.toLowerCase(),
@@ -96,10 +92,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         },
       };
 
-      await firebaseFirestore
-        .collection(COLLECTIONS.USERS)
-        .doc(user.uid)
-        .set(userProfile);
+      console.log('[Auth] REGISTRATION COMPLETE - NO DATABASE USED');
 
       set({
         user,
@@ -108,7 +101,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         isLoading: false,
       });
     } catch (error: any) {
-      console.error('Sign up error:', error);
+      console.error('[Auth] Registration failed:', error);
       set({
         error: error.message || 'Failed to sign up',
         isLoading: false,
@@ -119,6 +112,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signIn: async (email: string, password: string) => {
     try {
+      if (!firebaseAuth) {
+        throw new Error('Firebase Auth not configured');
+      }
+
       set({ isLoading: true, error: null });
 
       const userCredential = await firebaseAuth.signInWithEmailAndPassword(
@@ -128,19 +125,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
       const user = userCredential.user;
 
-      // Load user profile
-      await get().loadUserProfile(user.uid);
+      // Load user profile (with fallback)
+      await get().loadUserProfile(user.uid, user);
 
-      // Update last online
-      await firebaseFirestore
-        .collection(COLLECTIONS.USERS)
-        .doc(user.uid)
-        .update({
-          lastOnline: new Date(),
-        });
-
-      // Start presence tracking
-      presenceService.start(user.uid);
+      // Update last online (optional - may fail if database not set up)
+      if (firebaseDatabase) {
+        try {
+          await firebaseDatabase
+            .ref(`${RTDB_PATHS.USERS}/${user.uid}`)
+            .update({
+              lastOnline: new Date().toISOString(),
+            });
+        } catch (dbError) {
+          console.warn('[Auth] Could not update lastOnline:', dbError);
+        }
+      }
 
       set({
         user,
@@ -159,21 +158,25 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signOut: async () => {
     try {
-      set({ isLoading: true, error: null });
-
-      // Update last online before signing out
-      const { user } = get();
-      if (user) {
-        await firebaseFirestore
-          .collection(COLLECTIONS.USERS)
-          .doc(user.uid)
-          .update({
-            lastOnline: new Date(),
-          });
+      if (!firebaseAuth) {
+        throw new Error('Firebase not configured');
       }
 
-      // Stop presence tracking
-      presenceService.stop();
+      set({ isLoading: true, error: null });
+
+      // Update last online before signing out (optional)
+      const { user } = get();
+      if (user && firebaseDatabase) {
+        try {
+          await firebaseDatabase
+            .ref(`${RTDB_PATHS.USERS}/${user.uid}`)
+            .update({
+              lastOnline: new Date().toISOString(),
+            });
+        } catch (dbError) {
+          console.warn('[Auth] Could not update lastOnline:', dbError);
+        }
+      }
 
       await firebaseAuth.signOut();
 
@@ -200,6 +203,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         throw new Error('No user logged in');
       }
 
+      if (!firebaseDatabase) {
+        throw new Error('Firebase not configured');
+      }
+
       set({ isLoading: true, error: null });
 
       // Update Firebase Auth profile if displayName is changing
@@ -209,10 +216,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         });
       }
 
-      // Update Firestore profile
-      await firebaseFirestore
-        .collection(COLLECTIONS.USERS)
-        .doc(user.uid)
+      // Update Realtime Database profile
+      await firebaseDatabase
+        .ref(`${RTDB_PATHS.USERS}/${user.uid}`)
         .update(updates);
 
       // Update local state
@@ -235,6 +241,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   resetPassword: async (email: string) => {
     try {
+      if (!firebaseAuth) {
+        throw new Error('Firebase not configured');
+      }
+
       set({ isLoading: true, error: null });
       await firebaseAuth.sendPasswordResetEmail(email);
       set({ isLoading: false });
@@ -255,30 +265,53 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     });
   },
 
-  loadUserProfile: async (uid: string) => {
+  loadUserProfile: async (uid: string, authUser?: FirebaseAuthTypes.User) => {
     try {
-      const doc = await firebaseFirestore
-        .collection(COLLECTIONS.USERS)
-        .doc(uid)
-        .get();
+      if (firebaseDatabase) {
+        try {
+          const snapshot = await Promise.race([
+            firebaseDatabase.ref(`${RTDB_PATHS.USERS}/${uid}`).once('value'),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('timeout')), 3000)
+            ),
+          ]) as any;
 
-      if (doc.exists) {
-        const data = doc.data();
+          if (snapshot?.exists?.()) {
+            const data = snapshot.val();
+            const userProfile: UserProfile = {
+              uid: data.uid,
+              username: data.username,
+              email: data.email,
+              displayName: data.displayName,
+              photoURL: data.photoURL,
+              createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+              lastOnline: data.lastOnline ? new Date(data.lastOnline) : new Date(),
+              stats: data.stats || {
+                gamesPlayed: 0,
+                gamesWon: 0,
+                winRate: 0,
+              },
+            };
+            set({ userProfile });
+            return;
+          }
+        } catch (dbError) {
+          console.warn('[Auth] Could not load profile from database:', dbError);
+        }
+      }
+
+      // Fallback: create minimal profile from Auth user
+      if (authUser) {
         const userProfile: UserProfile = {
-          uid: data!.uid,
-          username: data!.username,
-          email: data!.email,
-          displayName: data!.displayName,
-          photoURL: data!.photoURL,
-          createdAt: data!.createdAt?.toDate() || new Date(),
-          lastOnline: data!.lastOnline?.toDate() || new Date(),
-          stats: data!.stats || {
-            gamesPlayed: 0,
-            gamesWon: 0,
-            winRate: 0,
-          },
+          uid: authUser.uid,
+          username: (authUser.displayName || authUser.email || 'user').toLowerCase(),
+          email: authUser.email || '',
+          displayName: authUser.displayName || 'User',
+          photoURL: authUser.photoURL,
+          createdAt: new Date(),
+          lastOnline: new Date(),
+          stats: { gamesPlayed: 0, gamesWon: 0, winRate: 0 },
         };
-
         set({ userProfile });
       }
     } catch (error) {
@@ -287,34 +320,38 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   initialize: () => {
+    // Check if Firebase is configured
+    if (!firebaseAuth) {
+      console.warn('Firebase not configured, skipping auth initialization');
+      set({ isLoading: false, isAuthenticated: false });
+      return () => {};
+    }
+
     // Listen for auth state changes
-    const unsubscribe = firebaseAuth.onAuthStateChanged(async (user) => {
-      if (user) {
-        // User is signed in
-        await get().loadUserProfile(user.uid);
-        
-        // Start presence tracking
-        presenceService.start(user.uid);
-        
-        set({
-          user,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } else {
-        // User is signed out
-        presenceService.stop();
-        
-        set({
-          user: null,
-          userProfile: null,
-          isAuthenticated: false,
-          isLoading: false,
-        });
+    const unsubscribe = firebaseAuth.onAuthStateChanged((user) => {
+      try {
+        if (user) {
+          get().loadUserProfile(user.uid, user);
+          // presenceService.start(user.uid); // Disabled - database permission issues
+          set({
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } else {
+          set({
+            user: null,
+            userProfile: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
+      } catch (error) {
+        console.error('[Auth] State change error:', error);
+        set({ isLoading: false });
       }
     });
 
-    // Return unsubscribe function for cleanup
     return unsubscribe;
   },
 }));

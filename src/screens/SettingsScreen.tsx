@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { View, Text, Switch, ScrollView, StatusBar } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Button from "../components/Button";
+import NavigationHeader from "../components/NavigationHeader";
 import { useSettingsStore } from "../store/settingsStore";
 import { useGameStore } from "../store/gameStore";
 import { colors, shadows, borderRadius } from "../theme";
@@ -75,22 +77,15 @@ export default function SettingsScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
       
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader title="Settings" />
+      </SafeAreaView>
+      
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1 }}
       >
         <ScrollView style={{ flex: 1, padding: 24 }} contentContainerStyle={{ paddingBottom: 32 }}>
-          <Text
-            style={{
-              fontSize: 28,
-              fontWeight: "bold",
-              color: colors.gold.primary,
-              textAlign: "center",
-              marginBottom: 32,
-            }}
-          >
-            Settings
-          </Text>
 
           <View className="gap-4">
             {/* Sound toggle */}
@@ -210,13 +205,8 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          <View className="mt-8 gap-4">
+          <View className="mt-8">
             <Button title="Save" onPress={handleSave} />
-            <Button
-              title="Back"
-              variant="outline"
-              onPress={() => navigation.goBack()}
-            />
           </View>
         </ScrollView>
       </LinearGradient>

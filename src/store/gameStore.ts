@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const GAME_STORAGE_KEY = "@25cardgame/game";
 import type { Card } from "../game-logic/cards";
 import type { Suit } from "../game-logic/cards";
-import { dealCards, getTrumpSuitFromCard } from "../game-logic/deck";
+import { dealCards, dealFromPack, getTrumpSuitFromCard } from "../game-logic/deck";
 import {
   getValidMoves,
   canRobPack,
@@ -335,6 +335,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       firstPlayerThisTrick,
       scores,
       players,
+      pack,
     } = get();
 
     if (!ledSuit || currentTrick.length !== 4) return;
@@ -350,12 +351,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const newHandsWon = { ...get().handsWon };
     const allCardsPlayed = players.every((p) => p.hand.length === 0);
+    const handWinner = checkHandWinner(newScores);
 
+    // Hand only ends when a team reaches 25. Otherwise deal more cards and continue.
     if (allCardsPlayed) {
-      const handWinner = checkHandWinner(newScores);
       if (handWinner) {
         newHandsWon[`team${handWinner}` as keyof typeof newHandsWon] += 1;
       } else {
+        const dealResult = dealFromPack(pack);
+        if (dealResult) {
+          const updatedPlayers = players.map((p, i) => ({
+            ...p,
+            hand: dealResult.hands[i],
+          }));
+          set({
+            currentTrick: [],
+            ledSuit: null,
+            currentPlayer: winner,
+            firstPlayerThisTrick: winner,
+            scores: newScores,
+            pack: dealResult.remainingPack,
+            players: updatedPlayers,
+            gamePhase: "playing",
+          });
+          get().calculateValidMoves(winner);
+          return;
+        }
+        // Pack exhausted - team with more points wins (fallback)
         if (newScores.team1 > newScores.team2) newHandsWon.team1 += 1;
         else if (newScores.team2 > newScores.team1) newHandsWon.team2 += 1;
       }

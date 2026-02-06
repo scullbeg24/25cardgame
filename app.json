@@ -18,7 +18,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.patrickscully.cardgame25"
+      "bundleIdentifier": "com.patrickscully.cardgame25",
+      "googleServicesFile": "./ios/25cardgame/GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {

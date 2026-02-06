@@ -9,7 +9,7 @@ import type { Card, Suit } from '../game-logic/cards';
 import type { GamePhase, TrickCard } from './gameStore';
 import type { RuleOptions } from '../game-logic/rules';
 import type { GameRoom } from './roomStore';
-import { dealCards } from '../game-logic/deck';
+import { dealCards, dealFromPack, getTrumpSuitFromCard } from '../game-logic/deck';
 import { 
   isLegalPlay, 
   getValidMoves, 
@@ -21,6 +21,7 @@ import {
   addTrickPoints,
   checkHandWinner,
   checkGameWinner,
+  POINTS_PER_TRICK,
 } from '../game-logic/scoring';
 
 export interface MultiplayerGameState {
@@ -38,6 +39,7 @@ export interface MultiplayerGameState {
   playersWhoCanRob: number[];
   robbed: boolean;
   trumpCardIsAce: boolean;
+  pack: Card[];
 }
 
 export interface MultiplayerPlayer {
@@ -103,7 +105,8 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
 
       // Deal cards
       const dealResult = dealCards();
-      const { hands, trumpCard, trumpSuit, pack } = dealResult;
+      const { hands, trumpCard, pack } = dealResult;
+      const trumpSuit = getTrumpSuitFromCard(trumpCard);
 
       // Determine dealer (random for first game)
       const dealer = Math.floor(Math.random() * room.players.length);
@@ -140,6 +143,7 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
         playersWhoCanRob,
         robbed: false,
         trumpCardIsAce,
+        pack,
       };
 
       // Create players data
@@ -238,11 +242,16 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
       const newRobberIndex = hasMoreRobbers ? gameState.playersWhoCanRob[nextRobberIndex + 1] : -1;
       const newCurrentPlayer = hasMoreRobbers ? newRobberIndex : (gameState.dealer + 1) % Object.keys(get().players).length;
 
+      // Add discarded card to pack
+      const pack = gameState.pack || [];
+      const newPack = [...pack, cardToDiscard];
+
       // Update game state in Firebase
       const gameRef = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}`);
       
       await gameRef.update({
         'state/robbed': true,
+        'state/pack': newPack,
         'state/gamePhase': newPhase,
         'state/robberIndex': newRobberIndex,
         'state/currentPlayer': newCurrentPlayer,
@@ -250,10 +259,12 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
       });
 
       // Update my hand in Firebase
-      const myUserId = Object.keys(get().players)[myPlayerSlot];
-      await gameRef.update({
-        [`players/${myUserId}/hand`]: newHand,
-      });
+      const myUserId = Object.keys(get().players).find(uid => get().players[uid].slot === myPlayerSlot);
+      if (myUserId) {
+        await gameRef.update({
+          [`players/${myUserId}/hand`]: newHand,
+        });
+      }
 
       set({ myHand: newHand, syncStatus: 'synced' });
     } catch (error: any) {
@@ -377,30 +388,56 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
 
   handleTrickComplete: async (gameId: string) => {
     const { gameState, players } = get();
-    if (!gameState) return;
+    if (!gameState || !gameState.ledSuit) return;
 
-    // Determine winner
+    const trickCards = gameState.currentTrick.map((t: any) => t.card);
     const winnerIndex = getTrickWinner(
-      gameState.currentTrick,
+      trickCards,
       gameState.ledSuit,
-      gameState.trumpSuit
+      gameState.trumpSuit,
+      gameState.firstPlayerThisTrick
     );
 
-    // Update scores
-    const newScores = { ...gameState.scores };
-    const winnerTeam = Object.values(players)[winnerIndex].teamId;
-    addTrickPoints(newScores, winnerTeam);
+    const newScores = addTrickPoints(
+      gameState.scores,
+      winnerIndex,
+      POINTS_PER_TRICK
+    );
 
-    // Check if hand is complete (all cards played)
     const handComplete = Object.values(players).every((p: any) => p.hand.length === 0);
 
     if (handComplete) {
-      // Check hand winner
       const handWinner = checkHandWinner(newScores);
       const newHandsWon = { ...gameState.handsWon };
+      const pack = gameState.pack || [];
+
       if (handWinner) {
         if (handWinner === 1) newHandsWon.team1++;
         else newHandsWon.team2++;
+      } else {
+        // Neither team reached 25 - deal more cards from pack if possible
+        const dealResult = dealFromPack(pack);
+        if (dealResult) {
+          const updates: Record<string, any> = {
+            'state/gamePhase': 'playing',
+            'state/scores': newScores,
+            'state/pack': dealResult.remainingPack,
+            'state/currentTrick': [],
+            'state/ledSuit': null,
+            'state/firstPlayerThisTrick': winnerIndex,
+            'state/currentPlayer': winnerIndex,
+            'metadata/lastUpdated': Date.now(),
+          };
+          Object.entries(players).forEach(([uid, p]) => {
+            updates[`players/${uid}/hand`] = dealResult.hands[p.slot];
+          });
+          const gameRef = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}`);
+          await gameRef.update(updates);
+          return;
+        }
+        // Pack exhausted - team with more points wins
+        if (newScores.team1 > newScores.team2) newHandsWon.team1++;
+        else if (newScores.team2 > newScores.team1) newHandsWon.team2++;
       }
 
       // Check game winner

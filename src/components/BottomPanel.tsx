@@ -1,4 +1,5 @@
 import { View, Text } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, shadows, borderRadius } from "../theme";
 import Card from "./Card";
 import type { Card as CardType, Suit } from "../game-logic/cards";
@@ -41,6 +42,7 @@ export default function BottomPanel({
   onCardSelect,
   isYourTurn,
 }: BottomPanelProps) {
+  const insets = useSafeAreaInsets();
   const suitColor = trumpSuit === "hearts" || trumpSuit === "diamonds" 
     ? colors.suits.hearts 
     : colors.suits.spades;
@@ -52,9 +54,9 @@ export default function BottomPanel({
     );
   };
 
-  // Group players by team for scoreboard
-  const team1Players = players.filter(p => p.teamIndex === 0);
-  const team2Players = players.filter(p => p.teamIndex === 1);
+  // Get team scores
+  const team1Score = players.find(p => p.teamIndex === 0)?.score ?? 0;
+  const team2Score = players.find(p => p.teamIndex === 1)?.score ?? 0;
 
   return (
     <View
@@ -62,271 +64,110 @@ export default function BottomPanel({
         backgroundColor: colors.background.secondary,
         borderTopWidth: 1,
         borderTopColor: colors.softUI.border,
-        paddingVertical: 6,
+        paddingTop: 4,
+        paddingBottom: Math.max(8, insets.bottom),
         paddingHorizontal: 8,
       }}
     >
-      {/* Top row: Cards In Hand - compact horizontal layout */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: colors.background.surface,
-          borderRadius: borderRadius.lg,
-          paddingVertical: 6,
-          paddingHorizontal: 12,
-          marginBottom: 6,
-          ...shadows.extruded.small,
-          borderWidth: 1,
-          borderColor: isYourTurn ? colors.gold.primary : colors.softUI.border,
-        }}
-      >
-        <Text
-          style={{
-            color: isYourTurn ? colors.gold.light : colors.gold.muted,
-            fontSize: 10,
-            fontWeight: "600",
-            textTransform: "uppercase",
-            letterSpacing: 1,
-            marginRight: 12,
-          }}
-        >
-          Your Hand
-        </Text>
-        
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {cards.map((card, index) => {
-            const valid = isValidMove(card);
-            return (
-              <View
-                key={`${card.suit}-${card.rank}-${index}`}
-                style={{
-                  marginLeft: index > 0 ? -30 : 0, // Overlap cards more for compact display
-                  zIndex: index,
-                }}
-              >
-                <Card
-                  card={card}
-                  faceUp
-                  selectable={isYourTurn && valid}
-                  validMove={valid && isYourTurn}
-                  onPress={() => valid && isYourTurn && onCardSelect(card)}
-                  size="small"
-                />
-              </View>
-            );
-          })}
-          {cards.length === 0 && (
-            <Text style={{ color: colors.text.muted, fontSize: 12, fontStyle: "italic" }}>
-              No cards
-            </Text>
-          )}
-        </View>
-      </View>
-
-      {/* Bottom row: Scoreboard and Trump */}
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {/* Scoreboard Section - Larger with team grouping */}
+      {/* Single row: Score | Cards | Trump */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        {/* Compact Score Display */}
         <View
           style={{
-            flex: 1,
             backgroundColor: colors.background.primary,
-            borderRadius: borderRadius.lg,
-            padding: 10,
+            borderRadius: borderRadius.md,
+            padding: 6,
+            minWidth: 60,
             borderWidth: 1,
             borderColor: colors.softUI.border,
           }}
         >
-          <Text
-            style={{
-              color: colors.gold.muted,
-              fontSize: 11,
-              fontWeight: "700",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              marginBottom: 8,
-              textAlign: "center",
-            }}
-          >
-            Scoreboard
-          </Text>
-          
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            {/* Team 1 (Your Team) */}
-            <View style={{ flex: 1 }}>
-              <View 
-                style={{ 
-                  flexDirection: "row", 
-                  alignItems: "center", 
-                  marginBottom: 6,
-                  paddingBottom: 4,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.teams.team1.primary + "40",
-                }}
-              >
-                <View
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: colors.teams.team1.primary,
-                    marginRight: 6,
-                  }}
-                />
-                <Text style={{ color: colors.teams.team1.light, fontSize: 11, fontWeight: "600" }}>
-                  Your Team
-                </Text>
-                <View
-                  style={{
-                    marginLeft: "auto",
-                    backgroundColor: colors.teams.team1.bg,
-                    paddingHorizontal: 8,
-                    paddingVertical: 2,
-                    borderRadius: 6,
-                  }}
-                >
-                  <Text style={{ color: colors.teams.team1.light, fontSize: 14, fontWeight: "bold" }}>
-                    {team1Players[0]?.score ?? 0}
-                  </Text>
-                </View>
-              </View>
-              {team1Players.map((player, index) => (
-                <View
-                  key={index}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingVertical: 2,
-                  }}
-                >
-                  <Text
-                    style={{ color: colors.text.secondary, fontSize: 11, flex: 1 }}
-                    numberOfLines={1}
-                  >
-                    {player.name}
-                  </Text>
-                  <Text style={{ color: colors.gold.muted, fontSize: 10 }}>
-                    {player.tricksWon} tricks
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Divider */}
-            <View style={{ width: 1, backgroundColor: colors.softUI.border }} />
-
-            {/* Team 2 (Opponents) */}
-            <View style={{ flex: 1 }}>
-              <View 
-                style={{ 
-                  flexDirection: "row", 
-                  alignItems: "center", 
-                  marginBottom: 6,
-                  paddingBottom: 4,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.teams.team2.primary + "40",
-                }}
-              >
-                <View
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: colors.teams.team2.primary,
-                    marginRight: 6,
-                  }}
-                />
-                <Text style={{ color: colors.teams.team2.light, fontSize: 11, fontWeight: "600" }}>
-                  Opponents
-                </Text>
-                <View
-                  style={{
-                    marginLeft: "auto",
-                    backgroundColor: colors.teams.team2.bg,
-                    paddingHorizontal: 8,
-                    paddingVertical: 2,
-                    borderRadius: 6,
-                  }}
-                >
-                  <Text style={{ color: colors.teams.team2.light, fontSize: 14, fontWeight: "bold" }}>
-                    {team2Players[0]?.score ?? 0}
-                  </Text>
-                </View>
-              </View>
-              {team2Players.map((player, index) => (
-                <View
-                  key={index}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingVertical: 2,
-                  }}
-                >
-                  <Text
-                    style={{ color: colors.text.secondary, fontSize: 11, flex: 1 }}
-                    numberOfLines={1}
-                  >
-                    {player.name}
-                  </Text>
-                  <Text style={{ color: colors.gold.muted, fontSize: 10 }}>
-                    {player.tricksWon} tricks
-                  </Text>
-                </View>
-              ))}
-            </View>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team1.primary }} />
+            <Text style={{ color: colors.teams.team1.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
+              {team1Score}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team2.primary }} />
+            <Text style={{ color: colors.teams.team2.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
+              {team2Score}
+            </Text>
           </View>
         </View>
 
-        {/* Trump Section - Extruded/highlighted style */}
+        {/* Cards In Hand - centered, overlapping */}
         <View
           style={{
-            width: 70,
-            backgroundColor: colors.background.surface,
-            borderRadius: borderRadius.lg,
-            padding: 6,
+            flex: 1,
+            flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",
-            ...shadows.extruded.small,
-            borderWidth: 2,
+            backgroundColor: colors.background.surface,
+            borderRadius: borderRadius.lg,
+            paddingVertical: 4,
+            paddingHorizontal: 8,
+            minHeight: 70,
+            borderWidth: 1,
+            borderColor: isYourTurn ? colors.gold.primary : colors.softUI.border,
+          }}
+        >
+          {cards.length > 0 ? (
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {cards.map((card, index) => {
+                const valid = isValidMove(card);
+                return (
+                  <View
+                    key={`${card.suit}-${card.rank}-${index}`}
+                    style={{
+                      marginLeft: index > 0 ? -35 : 0,
+                      zIndex: index,
+                    }}
+                  >
+                    <Card
+                      card={card}
+                      faceUp
+                      selectable={isYourTurn && valid}
+                      validMove={valid && isYourTurn}
+                      onPress={() => valid && isYourTurn && onCardSelect(card)}
+                      size="small"
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={{ color: colors.text.muted, fontSize: 11, fontStyle: "italic" }}>
+              No cards
+            </Text>
+          )}
+        </View>
+
+        {/* Compact Trump Display */}
+        <View
+          style={{
+            backgroundColor: colors.background.surface,
+            borderRadius: borderRadius.md,
+            padding: 4,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
             borderColor: colors.gold.dark,
+            minWidth: 50,
           }}
         >
           <Text
             style={{
               color: colors.gold.primary,
-              fontSize: 9,
+              fontSize: 8,
               fontWeight: "600",
               textTransform: "uppercase",
-              letterSpacing: 1,
-              marginBottom: 4,
+              letterSpacing: 0.5,
             }}
           >
             Trump
           </Text>
-          
-          {trumpCard ? (
-            <View style={{ transform: [{ scale: 0.6 }], marginVertical: -12 }}>
-              <Card card={trumpCard} faceUp size="small" />
-            </View>
-          ) : (
-            <View
-              style={{
-                width: 40,
-                height: 56,
-                backgroundColor: colors.background.primary,
-                borderRadius: borderRadius.sm,
-                alignItems: "center",
-                justifyContent: "center",
-                borderWidth: 1,
-                borderColor: colors.softUI.border,
-              }}
-            >
-              <Text style={{ color: suitColor, fontSize: 24 }}>{suitSymbol}</Text>
-            </View>
-          )}
+          <Text style={{ color: suitColor, fontSize: 22, marginTop: -2 }}>{suitSymbol}</Text>
         </View>
       </View>
     </View>

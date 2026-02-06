@@ -361,7 +361,7 @@ export default function HomeScreen() {
                   flexDirection: 'row',
                   alignItems: 'center',
                   backgroundColor: colors.background.surface,
-                  borderRadius: borderRadius.full,
+                  borderRadius: borderRadius.round,
                   padding: 8,
                   paddingRight: 16,
                   ...shadows.extruded.medium,
@@ -391,7 +391,7 @@ export default function HomeScreen() {
                 onPress={() => navigation.navigate('Friends')}
                 style={{
                   backgroundColor: colors.background.surface,
-                  borderRadius: borderRadius.full,
+                  borderRadius: borderRadius.round,
                   width: 44,
                   height: 44,
                   justifyContent: 'center',

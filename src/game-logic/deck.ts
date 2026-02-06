@@ -45,3 +45,19 @@ export function dealCards(): DealResult {
 export function getTrumpSuitFromCard(card: Card): Card["suit"] {
   return card.suit;
 }
+
+/**
+ * Deal 5 more cards to each player from the pack.
+ * Used when all tricks are played but neither team has reached 25 points.
+ * Returns new hands and remaining pack. Requires at least 20 cards in pack.
+ */
+export function dealFromPack(pack: Card[]): { hands: Card[][]; remainingPack: Card[] } | null {
+  if (pack.length < 20) return null;
+  const toDeal = pack.slice(0, 20);
+  const remainingPack = pack.slice(20);
+  const hands: Card[][] = [[], [], [], []];
+  for (let i = 0; i < 20; i++) {
+    hands[i % 4].push(toDeal[i]);
+  }
+  return { hands, remainingPack };
+}

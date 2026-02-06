@@ -37,26 +37,27 @@ export function isBlackSuit(suit: Suit): boolean {
   return BLACK_SUITS.includes(suit);
 }
 
-/** 5♥ and A♥ are ALWAYS trump regardless of trump suit */
+/** A♥ is always trump regardless of trump suit. 5♥ is only trump when hearts are trump. */
 export function isAlwaysTrump(card: Card): boolean {
-  return card.suit === "hearts" && (card.rank === "5" || card.rank === "A");
+  return card.suit === "hearts" && card.rank === "A";
 }
 
-/** Check if card is in trump suit (including 5♥ and A♥ which are always trump) */
+/** Check if card is in trump suit (including A♥ which is always trump; 5♥ only when hearts are trump) */
 export function isTrump(card: Card, trumpSuit: Suit): boolean {
   return card.suit === trumpSuit || isAlwaysTrump(card);
 }
 
 /**
  * Get the trump rank for comparison (higher = wins).
- * 5♥ = highest, J of trump = 2nd, A♥ = 3rd, A of trump = 4th, then K, Q, then numerals.
- * Red suits: numerals descend (10 high, 2 low). Black suits: numerals ascend (2 low, 10 high).
+ * 5 of Trumps (5 of trump suit) = highest. 5♥ only has this rank when hearts are trump.
+ * When hearts trump: 5♥, J♥, A♥, K♥, Q♥, numerals.
+ * When other suit trump: 5 of trump, J of trump, A♥, A of trump, K, Q, numerals.
  */
 export function getTrumpRank(card: Card, trumpSuit: Suit): number {
-  // 5♥ is always highest
-  if (card.suit === "hearts" && card.rank === "5") return 1000;
+  // 5 of trump suit (Five of Trumps) is always highest - 5♥ only when hearts are trump
+  if (card.suit === trumpSuit && card.rank === "5") return 1000;
 
-  // Jack of trump is 2nd
+  // Jack of trump is 3rd
   if (card.suit === trumpSuit && card.rank === "J") return 900;
 
   // A♥ is always 3rd
@@ -69,17 +70,16 @@ export function getTrumpRank(card: Card, trumpSuit: Suit): number {
   if (card.suit === trumpSuit && card.rank === "K") return 600;
   if (card.suit === trumpSuit && card.rank === "Q") return 500;
 
-  // Non-face trump cards
-  const faceRanks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
-  const numeralRanks: Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "10"];
+  // Non-face trump cards (2,3,4,6,7,8,9,10 - exclude 5 which is handled above)
+  const numeralRanks: Rank[] = ["2", "3", "4", "6", "7", "8", "9", "10"];
   if (card.suit === trumpSuit && numeralRanks.includes(card.rank)) {
     const idx = numeralRanks.indexOf(card.rank);
     if (isBlackSuit(trumpSuit)) {
-      // Black: 2=lowest (0), 10=highest (8)
+      // Black: 2=lowest (0), 10=highest (7)
       return 100 + idx;
     } else {
-      // Red: 10=highest, 2=lowest - reverse
-      return 100 + (8 - idx);
+      // Red: 10=lowest, 2=highest - reverse
+      return 100 + (7 - idx);
     }
   }
 

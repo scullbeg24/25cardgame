@@ -8,25 +8,17 @@ import {
   RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
 import { useFriendStore } from '../store/friendStore';
 import { colors, shadows, borderRadius } from '../theme';
 import FriendListItem from '../components/FriendListItem';
 import UserSearchBar from '../components/UserSearchBar';
-
-type RootStackParamList = {
-  Home: undefined;
-  Friends: undefined;
-};
-
-type FriendsNavProp = NativeStackNavigationProp<RootStackParamList, 'Friends'>;
+import NavigationHeader from '../components/NavigationHeader';
 
 type TabType = 'friends' | 'pending' | 'add';
 
 export default function FriendsScreen() {
-  const navigation = useNavigation<FriendsNavProp>();
   const { user } = useAuthStore();
   const {
     friends,
@@ -176,41 +168,14 @@ export default function FriendsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader title="Friends" />
+      </SafeAreaView>
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1 }}
       >
         <View style={{ flex: 1, padding: 24 }}>
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={{
-                backgroundColor: colors.background.surface,
-                borderRadius: borderRadius.full,
-                width: 40,
-                height: 40,
-                justifyContent: 'center',
-                alignItems: 'center',
-                ...shadows.pressed.medium,
-              }}
-            >
-              <Text style={{ color: colors.text.primary, fontSize: 20 }}>←</Text>
-            </TouchableOpacity>
-            <Text
-              style={{
-                flex: 1,
-                textAlign: 'center',
-                fontSize: 24,
-                fontWeight: 'bold',
-                color: colors.text.primary,
-                marginRight: 40,
-              }}
-            >
-              Friends
-            </Text>
-          </View>
-
           {/* Tab Bar */}
           <View
             style={{

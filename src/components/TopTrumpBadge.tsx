@@ -26,8 +26,8 @@ interface TopTrumpBadgeProps {
 
 // Check if a card is a "top trump" worthy of a special badge
 export function isTopTrump(card: Card, trumpSuit: Suit): boolean {
-  // 5 of Hearts - highest trump
-  if (card.suit === "hearts" && card.rank === "5") return true;
+  // 5 of trump suit (Five of Trumps) - highest when that suit is trump
+  if (card.suit === trumpSuit && card.rank === "5") return true;
   // Jack of trump suit
   if (card.suit === trumpSuit && card.rank === "J") return true;
   // Ace of Hearts - always trump
@@ -37,8 +37,8 @@ export function isTopTrump(card: Card, trumpSuit: Suit): boolean {
 
 // Get the badge config for a top trump
 function getTopTrumpConfig(card: Card, trumpSuit: Suit) {
-  if (card.suit === "hearts" && card.rank === "5") {
-    return { icon: "👑", text: "5♥", color: colors.gold.light };
+  if (card.suit === trumpSuit && card.rank === "5") {
+    return { icon: "👑", text: "5 trump", color: colors.gold.light };
   }
   if (card.suit === trumpSuit && card.rank === "J") {
     return { icon: "⚔️", text: "J trump", color: colors.gold.primary };

@@ -274,7 +274,7 @@ function selectHardCard(
 
   const topTrumps = context.hand.filter(
     (c) =>
-      (c.suit === "hearts" && c.rank === "5") ||
+      (c.suit === context.trumpSuit && c.rank === "5") ||
       (c.suit === context.trumpSuit && c.rank === "J") ||
       (c.suit === "hearts" && c.rank === "A")
   );
@@ -283,7 +283,7 @@ function selectHardCard(
     const nonTopMoves = validMoves.filter(
       (c) =>
         !(
-          (c.suit === "hearts" && c.rank === "5") ||
+          (c.suit === context.trumpSuit && c.rank === "5") ||
           (c.suit === context.trumpSuit && c.rank === "J") ||
           (c.suit === "hearts" && c.rank === "A")
         )

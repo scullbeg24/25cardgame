@@ -7,13 +7,9 @@ import {
   StatusBar,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import Button from "../components/Button";
+import { SafeAreaView } from "react-native-safe-area-context";
+import NavigationHeader from "../components/NavigationHeader";
 import { colors, shadows, borderRadius } from "../theme";
-import type { RootStackParamList } from "./HomeScreen";
-
-type RulesNavProp = NativeStackNavigationProp<RootStackParamList, "Rules">;
 
 interface SectionProps {
   title: string;
@@ -120,28 +116,19 @@ function CardRankingTable({ title, rankings }: { title: string; rankings: { suit
 }
 
 export default function RulesScreen() {
-  const navigation = useNavigation<RulesNavProp>();
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
+      
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader title="How to Play 25" />
+      </SafeAreaView>
       
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1 }}
       >
         <ScrollView style={{ flex: 1, padding: 24 }} contentContainerStyle={{ paddingBottom: 24 }}>
-          <Text
-            style={{
-              fontSize: 28,
-              fontWeight: "bold",
-              color: colors.gold.primary,
-              textAlign: "center",
-              marginBottom: 24,
-            }}
-          >
-            How to Play 25
-          </Text>
 
           <Section title="Objective">
             <Paragraph>
@@ -211,7 +198,7 @@ export default function RulesScreen() {
               When playing with trump cards, the hierarchy from highest to lowest is:
             </Paragraph>
             <Text style={{ color: colors.text.primary, fontSize: 15, lineHeight: 28, marginTop: 8 }}>
-              1. <Text style={{ color: colors.suits.hearts, fontWeight: "600" }}>5♥</Text> (always highest){"\n"}
+              1. 5 of trumps (highest – 5♥ when hearts are trump, 5 of trump suit otherwise){"\n"}
               2. Jack of trump{"\n"}
               3. <Text style={{ color: colors.suits.hearts, fontWeight: "600" }}>A♥</Text> (always 3rd best){"\n"}
               4. Ace of trump{"\n"}
@@ -329,9 +316,6 @@ export default function RulesScreen() {
             />
           </Section>
 
-          <View className="mt-6">
-            <Button title="Got it" onPress={() => navigation.goBack()} />
-          </View>
         </ScrollView>
       </LinearGradient>
     </View>

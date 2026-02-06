@@ -59,7 +59,7 @@ export function canRobPack(
   );
   if (hasAceOfTrump) return true;
 
-  if (opts.allowRobWithFiveHearts) {
+  if (opts.allowRobWithFiveHearts && trumpSuit === "hearts") {
     return hand.some((c) => c.suit === "hearts" && c.rank === "5");
   }
 
@@ -96,8 +96,7 @@ export function canRobAce(
   
   if (hasAceOfTrump) return true;
 
-  // Optionally allow robbing with 5 of hearts
-  if (opts.allowRobWithFiveHearts) {
+  if (opts.allowRobWithFiveHearts && trumpSuit === "hearts") {
     return hand.some((c) => c.suit === "hearts" && c.rank === "5");
   }
 

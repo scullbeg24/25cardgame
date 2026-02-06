@@ -8,21 +8,13 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
 import { colors, shadows, borderRadius } from '../theme';
 import Button from '../components/Button';
-
-type RootStackParamList = {
-  Home: undefined;
-  Profile: undefined;
-};
-
-type ProfileNavProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
+import NavigationHeader from '../components/NavigationHeader';
 
 export default function ProfileScreen() {
-  const navigation = useNavigation<ProfileNavProp>();
   const { userProfile, signOut, updateProfile, isLoading } = useAuthStore();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -76,40 +68,14 @@ export default function ProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader title="Profile" />
+      </SafeAreaView>
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={{ padding: 24 }}>
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={{
-                backgroundColor: colors.background.surface,
-                borderRadius: borderRadius.full,
-                width: 40,
-                height: 40,
-                justifyContent: 'center',
-                alignItems: 'center',
-                ...shadows.pressed.medium,
-              }}
-            >
-              <Text style={{ color: colors.text.primary, fontSize: 20 }}>←</Text>
-            </TouchableOpacity>
-            <Text
-              style={{
-                flex: 1,
-                textAlign: 'center',
-                fontSize: 24,
-                fontWeight: 'bold',
-                color: colors.text.primary,
-                marginRight: 40,
-              }}
-            >
-              Profile
-            </Text>
-          </View>
 
           {/* Profile Info Card */}
           <View

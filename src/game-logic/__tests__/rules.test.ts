@@ -58,19 +58,34 @@ describe("rules", () => {
       expect(result.valid).toBe(true);
     });
 
-    it("allows playing 5 of hearts (always trump) even when holding the led suit", () => {
+    it("allows playing 5 of hearts when hearts are trump even when holding the led suit", () => {
       const ledCard: Card = { suit: "clubs", rank: "K" };
       const hand: Card[] = [
         { suit: "clubs", rank: "2" },
-        { suit: "hearts", rank: "5" }, // 5 of hearts is always trump
+        { suit: "hearts", rank: "5" }, // 5 of hearts is Five of Trumps when hearts are trump
       ];
       const result = isLegalPlay(
         { suit: "hearts", rank: "5" },
         hand,
         [ledCard],
-        "spades" // spades is trump, but 5 of hearts is always trump
+        "hearts" // hearts is trump
       );
       expect(result.valid).toBe(true);
+    });
+    it("must follow suit with 5 of hearts when hearts are not trump", () => {
+      const ledCard: Card = { suit: "hearts", rank: "K" };
+      const hand: Card[] = [
+        { suit: "hearts", rank: "5" },
+        { suit: "clubs", rank: "A" },
+      ];
+      const result = isLegalPlay(
+        { suit: "clubs", rank: "A" },
+        hand,
+        [ledCard],
+        "diamonds" // diamonds is trump, 5♥ is not trump
+      );
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain("follow");
     });
   });
 

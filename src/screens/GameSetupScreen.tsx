@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { View, Text, TextInput, StatusBar } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Button from "../components/Button";
+import NavigationHeader from "../components/NavigationHeader";
 import { useGameStore } from "../store/gameStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { colors, shadows, borderRadius } from "../theme";
@@ -34,26 +36,19 @@ export default function GameSetupScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
       
+      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
+        <NavigationHeader title="New Game" />
+      </SafeAreaView>
+      
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1, padding: 24 }}
       >
         <Text
           style={{
-            fontSize: 32,
-            fontWeight: "bold",
-            color: colors.gold.primary,
-            textAlign: "center",
-            marginTop: 32,
-          }}
-        >
-          New Game
-        </Text>
-        <Text
-          style={{
             color: colors.text.secondary,
             textAlign: "center",
-            marginTop: 8,
+            marginTop: 16,
             fontSize: 16,
           }}
         >
@@ -111,14 +106,9 @@ export default function GameSetupScreen() {
           </Text>
         </View>
 
-        {/* Buttons */}
-        <View className="mt-12 gap-4">
+        {/* Start Button */}
+        <View className="mt-12">
           <Button title="Start Game" onPress={handleStart} />
-          <Button
-            title="Back"
-            variant="outline"
-            onPress={() => navigation.goBack()}
-          />
         </View>
       </LinearGradient>
     </View>
