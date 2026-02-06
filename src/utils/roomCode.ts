@@ -1,18 +1,19 @@
 /**
  * Room Code Generation Utility
  * Generates unique 6-character alphanumeric room codes
+ *
+ * NOTE: generateUniqueRoomCode previously used Firestore.
+ * Room code uniqueness is now handled directly in roomStore.ts using RTDB.
  */
 
-import { firebaseFirestore, COLLECTIONS } from '../config/firebase.config';
-
-const CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluding similar looking chars (0, O, 1, I)
+const CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Excluding similar looking chars (0, O, 1, I)
 const CODE_LENGTH = 6;
 
 /**
  * Generate a random room code
  */
 export function generateRoomCode(): string {
-  let code = '';
+  let code = "";
   for (let i = 0; i < CODE_LENGTH; i++) {
     code += CHARACTERS.charAt(Math.floor(Math.random() * CHARACTERS.length));
   }
@@ -20,25 +21,14 @@ export function generateRoomCode(): string {
 }
 
 /**
- * Generate a unique room code by checking against existing codes in Firestore
+ * Generate a unique room code.
+ * NOTE: Uniqueness checking is now done in roomStore.ts via RTDB.
+ * This function just generates a random code without checking.
  */
-export async function generateUniqueRoomCode(maxAttempts = 10): Promise<string> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const code = generateRoomCode();
-    
-    // Check if code already exists
-    const existingRooms = await firebaseFirestore
-      .collection(COLLECTIONS.GAME_ROOMS)
-      .where('roomCode', '==', code)
-      .where('status', 'in', ['waiting', 'ready', 'playing'])
-      .get();
-    
-    if (existingRooms.empty) {
-      return code;
-    }
-  }
-  
-  throw new Error('Failed to generate unique room code');
+export async function generateUniqueRoomCode(
+  _maxAttempts = 10
+): Promise<string> {
+  return generateRoomCode();
 }
 
 /**
@@ -59,6 +49,6 @@ export function isValidRoomCode(code: string): boolean {
   if (!code || code.length !== CODE_LENGTH) {
     return false;
   }
-  
+
   return /^[A-Z2-9]{6}$/.test(code);
 }

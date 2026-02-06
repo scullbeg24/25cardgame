@@ -12,14 +12,24 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 export type RootStackParamList = {
   Home: undefined;
+  Login: undefined;
+  Register: undefined;
   Profile: undefined;
   Friends: undefined;
   MultiplayerMenu: undefined;
+  RoomLobby: { roomId: string };
   GameSetup: undefined;
-  Game: undefined;
+  Game: { mode?: "local" | "online"; roomId?: string } | undefined;
   Rules: undefined;
   Settings: undefined;
-  GameOver: undefined;
+  GameOver: {
+    mode?: "local" | "online";
+    roomId?: string;
+    winnerIndex?: number;
+    playerNames?: string[];
+    scores?: number[];
+    targetScore?: number;
+  } | undefined;
 };
 
 type HomeNavProp = NativeStackNavigationProp<RootStackParamList, "Home">;
@@ -379,11 +389,11 @@ export default function HomeScreen() {
                   }}
                 >
                   <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.gold.primary }}>
-                    {userProfile.displayName.charAt(0).toUpperCase()}
+                    {(userProfile.displayName || userProfile.username || '?').charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text.primary }}>
-                  {userProfile.displayName}
+                  {userProfile.displayName || userProfile.username || 'User'}
                 </Text>
               </TouchableOpacity>
 

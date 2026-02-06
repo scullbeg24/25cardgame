@@ -41,6 +41,49 @@ export function dealCards(): DealResult {
   return { hands, trumpCard, pack };
 }
 
+/**
+ * Deal 5 cards to each of N players (2-10).
+ * Next card is turned face-up for trump. Remainder forms the pack.
+ * Requires N*5 + 1 <= 52, i.e. N <= 10.
+ */
+export function dealCardsForN(numPlayers: number): DealResult {
+  if (numPlayers < 2 || numPlayers > 10) {
+    throw new Error(`Invalid player count: ${numPlayers}. Must be 2-10.`);
+  }
+  const deck = shuffleDeck([...createDeck()]);
+  const totalCards = numPlayers * 5;
+
+  const hands: Card[][] = Array.from({ length: numPlayers }, () => []);
+  for (let i = 0; i < totalCards; i++) {
+    hands[i % numPlayers].push(deck[i]);
+  }
+
+  const trumpCard = deck[totalCards];
+  const pack = deck.slice(totalCards + 1);
+
+  return { hands, trumpCard, pack };
+}
+
+/**
+ * Deal 5 more cards to each of N players from the pack.
+ * Used when all tricks are played but no one has reached target score.
+ * Requires at least N*5 cards in pack.
+ */
+export function dealFromPackForN(
+  pack: Card[],
+  numPlayers: number
+): { hands: Card[][]; remainingPack: Card[] } | null {
+  const totalCards = numPlayers * 5;
+  if (pack.length < totalCards) return null;
+  const toDeal = pack.slice(0, totalCards);
+  const remainingPack = pack.slice(totalCards);
+  const hands: Card[][] = Array.from({ length: numPlayers }, () => []);
+  for (let i = 0; i < totalCards; i++) {
+    hands[i % numPlayers].push(toDeal[i]);
+  }
+  return { hands, remainingPack };
+}
+
 /** Get trump suit from the face-up card */
 export function getTrumpSuitFromCard(card: Card): Card["suit"] {
   return card.suit;

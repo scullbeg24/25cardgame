@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, StatusBar, Dimensions, Pressable, Modal, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RouteProp } from "@react-navigation/native";
 import { useGameStore } from "../store/gameStore";
+import { useOnlineGameStore } from "../store/onlineGameStore";
+import { useRoomStore } from "../store/roomStore";
+import { useGameController } from "../hooks/useGameController";
 import { useGameLogStore } from "../store/gameLogStore";
+import { startPresence, stopPresence } from "../services/presenceService";
 import type { Card, Suit } from "../game-logic/cards";
 import { isTrump } from "../game-logic/cards";
 import { selectAICard, getAIDelay, type TrickEntry } from "../game-logic/ai";
@@ -60,9 +65,14 @@ const getPlayerBadgePosition = (playerIndex: number) => {
 };
 
 type GameNavProp = NativeStackNavigationProp<RootStackParamList, "Game">;
+type GameRouteProp = RouteProp<RootStackParamList, "Game">;
 
 export default function GameScreen() {
   const navigation = useNavigation<GameNavProp>();
+  const route = useRoute<GameRouteProp>();
+  const mode = route.params?.mode ?? "local";
+  const routeRoomId = route.params?.roomId;
+
   const aiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [lastTrickWinner, setLastTrickWinner] = useState<number | null>(null);
   const [isDealing, setIsDealing] = useState(false);
@@ -115,6 +125,11 @@ export default function GameScreen() {
     clearLogs,
   } = useGameLogStore();
 
+  // ─── Game state: local vs online ────────────────────────────
+  const gc = useGameController(mode);
+  const localStore = useGameStore();
+
+  // In local mode, use local store directly. In online, use game controller.
   const {
     players,
     trumpSuit,
@@ -134,29 +149,82 @@ export default function GameScreen() {
     completeHand,
     robPack,
     declineRob,
-  } = useGameStore();
+  } = mode === "online" ? gc : localStore;
 
-  const humanPlayer = players[HUMAN_PLAYER_INDEX];
+  const humanPlayerIndex = mode === "online" ? gc.humanPlayerIndex : HUMAN_PLAYER_INDEX;
+  const isOnline = mode === "online";
+
+  // Initialize online game when entering online mode
+  useEffect(() => {
+    if (!isOnline || !routeRoomId) return;
+    const roomStore = useRoomStore.getState();
+    const onlineGame = useOnlineGameStore.getState();
+
+    // Start presence tracking
+    startPresence(routeRoomId);
+
+    if (roomStore.isHost) {
+      // Host: initialize the game engine
+      const room = roomStore.currentRoom;
+      if (!room) return;
+
+      const playerNames = Object.values(room.players)
+        .sort((a, b) => a.slot - b.slot)
+        .map((p) => p.name);
+
+      onlineGame.initAsHost(
+        routeRoomId,
+        playerNames,
+        roomStore.mySlot ?? 0,
+        room.settings.numPlayers,
+        room.settings.targetScore,
+      );
+    } else {
+      // Client: subscribe to game state
+      onlineGame.initAsClient(routeRoomId, roomStore.mySlot ?? 0);
+    }
+
+    return () => {
+      stopPresence();
+      useOnlineGameStore.getState().cleanup();
+    };
+  }, [isOnline, routeRoomId]);
+
+  const humanPlayer = players[humanPlayerIndex];
   const tricksThisHand = {
     team1: Math.floor(scores.team1 / 5),
     team2: Math.floor(scores.team2 / 5),
   };
 
   // Prepare player data for components
-  const playerScores = players.map((p, idx) => ({
-    name: p.name,
-    score: idx % 2 === 0 ? scores.team1 : scores.team2,
-    tricksWon: idx % 2 === 0 ? tricksThisHand.team1 : tricksThisHand.team2,
-    teamIndex: (idx % 2) as 0 | 1,
-  }));
+  const playerScores = isOnline
+    ? players.map((p, idx) => ({
+        name: p.name,
+        score: gc.individualScores[idx] ?? 0,
+        tricksWon: 0, // Not tracked per-player in online individual mode
+        teamIndex: (idx % 2) as 0 | 1,
+      }))
+    : players.map((p, idx) => ({
+        name: p.name,
+        score: idx % 2 === 0 ? scores.team1 : scores.team2,
+        tricksWon: idx % 2 === 0 ? tricksThisHand.team1 : tricksThisHand.team2,
+        teamIndex: (idx % 2) as 0 | 1,
+      }));
 
-  // Prepare bottom panel player list (all 4 players)
-  const bottomPanelPlayers = players.map((p, idx) => ({
-    name: idx === 2 ? "You" : p.name,
-    score: idx % 2 === 0 ? scores.team1 : scores.team2,
-    tricksWon: idx % 2 === 0 ? tricksThisHand.team1 : tricksThisHand.team2,
-    teamIndex: (idx % 2) as 0 | 1,
-  }));
+  // Prepare bottom panel player list
+  const bottomPanelPlayers = isOnline
+    ? players.map((p, idx) => ({
+        name: idx === humanPlayerIndex ? "You" : p.name,
+        score: gc.individualScores[idx] ?? 0,
+        tricksWon: 0,
+        teamIndex: (idx % 2) as 0 | 1,
+      }))
+    : players.map((p, idx) => ({
+        name: idx === 2 ? "You" : p.name,
+        score: idx % 2 === 0 ? scores.team1 : scores.team2,
+        tricksWon: idx % 2 === 0 ? tricksThisHand.team1 : tricksThisHand.team2,
+        teamIndex: (idx % 2) as 0 | 1,
+      }));
 
   // Track last trick winner for visual feedback and logging
   const prevTrickLength = useRef(currentTrick.length);
@@ -166,8 +234,8 @@ export default function GameScreen() {
     if (currentTrick.length === 0 && gamePhase === "playing" && prevTrickLength.current === 4) {
       setLastTrickWinner(firstPlayerThisTrick);
       // Log trick win
-      const winnerName = firstPlayerThisTrick === HUMAN_PLAYER_INDEX 
-        ? "You" 
+      const winnerName = firstPlayerThisTrick === humanPlayerIndex
+        ? "You"
         : players[firstPlayerThisTrick]?.name ?? "Player";
       logTrickWon(winnerName, 5);
       
@@ -212,12 +280,12 @@ export default function GameScreen() {
     if (currentTrick.length > 0) {
       const lastPlay = currentTrick[currentTrick.length - 1];
       if (lastPlay && isTopTrump(lastPlay.card, trumpSuit)) {
-        const playerName = lastPlay.playerIndex === HUMAN_PLAYER_INDEX 
-          ? "You" 
+        const playerName = lastPlay.playerIndex === humanPlayerIndex
+          ? "You"
           : players[lastPlay.playerIndex]?.name ?? "Player";
         setTopTrumpCard(lastPlay.card);
         setTopTrumpPlayer(playerName);
-        setTopTrumpIsYou(lastPlay.playerIndex === HUMAN_PLAYER_INDEX);
+        setTopTrumpIsYou(lastPlay.playerIndex === humanPlayerIndex);
         setTopTrumpPlayerIndex(lastPlay.playerIndex);
         setShowTopTrump(true);
         playTopTrump();
@@ -354,17 +422,38 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (gamePhase === "gameOver") {
-      navigation.replace("GameOver");
+      if (isOnline) {
+        const gs = gc.individualScores;
+        // Find winner (highest score or whoever reached target)
+        let winnerIdx = 0;
+        let maxScore = 0;
+        gs.forEach((s, i) => {
+          if (s > maxScore) {
+            maxScore = s;
+            winnerIdx = i;
+          }
+        });
+        navigation.replace("GameOver", {
+          mode: "online",
+          roomId: routeRoomId,
+          winnerIndex: winnerIdx,
+          playerNames: players.map((p) => p.name),
+          scores: gs,
+          targetScore: useOnlineGameStore.getState().gameState?.targetScore ?? 25,
+        });
+      } else {
+        navigation.replace("GameOver", { mode: "local" });
+      }
     }
-  }, [gamePhase, navigation]);
+  }, [gamePhase, navigation, isOnline]);
 
   // Log when robbing phase starts and notify human player
   const prevRobberIndex = useRef<number>(-1);
   useEffect(() => {
     if (gamePhase === "robbing" && robberIndex !== -1 && trumpCard) {
       if (prevRobberIndex.current !== robberIndex) {
-        const robberName = robberIndex === HUMAN_PLAYER_INDEX 
-          ? "You" 
+        const robberName = robberIndex === humanPlayerIndex
+          ? "You"
           : players[robberIndex]?.name ?? "Player";
         logRobOffered(robberName, trumpCard);
         prevRobberIndex.current = robberIndex;
@@ -374,10 +463,11 @@ export default function GameScreen() {
     }
   }, [gamePhase, robberIndex, trumpCard, players, logRobOffered]);
 
-  // Handle AI robbing decision
+  // Handle AI robbing decision (local mode only)
   useEffect(() => {
+    if (isOnline) return; // No AI in online mode
     if (gamePhase !== "robbing" || robberIndex === -1) return;
-    
+
     const robber = players[robberIndex];
     if (!robber?.isAI || !trumpCard) return;
     
@@ -409,7 +499,9 @@ export default function GameScreen() {
     return () => clearTimeout(t);
   }, [gamePhase, robberIndex, players, trumpCard, robPack, declineRob, logRobAccepted, logRobDeclined]);
 
+  // AI turn logic (local mode only)
   useEffect(() => {
+    if (isOnline) return; // No AI in online mode
     if (
       gamePhase !== "playing" ||
       !players[currentPlayer]?.isAI ||
@@ -468,9 +560,9 @@ export default function GameScreen() {
   }, []);
 
   const handleCardSelect = (card: Card) => {
-    if (gamePhase !== "playing" || currentPlayer !== HUMAN_PLAYER_INDEX) return;
-    
-    const result = playCard(HUMAN_PLAYER_INDEX, card);
+    if (gamePhase !== "playing" || currentPlayer !== humanPlayerIndex) return;
+
+    const result = playCard(humanPlayerIndex, card);
     
     // Handle invalid play - show alert to player
     if (result && !result.success && result.error) {
@@ -523,7 +615,7 @@ export default function GameScreen() {
   }
 
   const currentPlayerName = players[currentPlayer]?.name || "Player";
-  const isYourTurn = currentPlayer === HUMAN_PLAYER_INDEX;
+  const isYourTurn = currentPlayer === humanPlayerIndex;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
@@ -600,6 +692,7 @@ export default function GameScreen() {
           dealer={dealer}
           playerScores={playerScores}
           playerCardCounts={players.map((p) => p.hand.length)}
+          numPlayers={players.length}
         />
       </View>
 
@@ -624,7 +717,7 @@ export default function GameScreen() {
 
         {/* Rob the Ace Prompt Modal */}
         <RobPrompt
-          visible={gamePhase === "robbing" && robberIndex === HUMAN_PLAYER_INDEX}
+          visible={gamePhase === "robbing" && robberIndex === humanPlayerIndex}
           hand={players[robberIndex]?.hand ?? []}
           trumpCard={trumpCard!}
           onRob={handleRob}

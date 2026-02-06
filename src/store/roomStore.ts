@@ -1,390 +1,399 @@
 /**
- * Room Store
- * Manages game room creation, joining, and state synchronization
+ * Room lifecycle management using Firebase Realtime Database.
+ * Handles room creation, joining, leaving, ready states, and public room browsing.
  */
 
-import { create } from 'zustand';
-import { firebaseFirestore, COLLECTIONS } from '../config/firebase.config';
-import { generateUniqueRoomCode } from '../utils/roomCode';
-import type { RuleOptions } from '../game-logic/rules';
+import { create } from "zustand";
+import { firebaseAuth, firebaseDatabase, RTDB_PATHS } from "../config/firebase.config";
 
-export interface RoomPlayer {
-  userId: string;
-  username: string;
-  displayName: string;
-  teamId: 1 | 2;
-  isReady: boolean;
-  slot: number;
+// ─── Types ───────────────────────────────────────────────────────
+
+export interface RoomSettings {
+  numPlayers: number;
+  targetScore: number;
+  isPublic: boolean;
 }
 
-export interface GameRoom {
+export interface RoomPlayer {
+  name: string;
+  slot: number;
+  ready: boolean;
+}
+
+export interface Room {
   id: string;
-  roomCode: string;
-  hostUserId: string;
-  players: RoomPlayer[];
-  maxPlayers: number;
-  status: 'waiting' | 'ready' | 'playing' | 'finished';
-  gameMode: 'online';
-  ruleOptions: RuleOptions;
-  createdAt: Date;
-  gameStateRef?: string; // Path to Realtime DB game state
+  code: string;
+  hostId: string;
+  settings: RoomSettings;
+  status: "waiting" | "playing" | "finished";
+  players: Record<string, RoomPlayer>;
+  createdAt: number;
+}
+
+export interface PublicRoomInfo {
+  id: string;
+  code: string;
+  hostName: string;
+  numPlayers: number;
+  currentPlayers: number;
+  targetScore: number;
+  createdAt: number;
 }
 
 interface RoomState {
-  currentRoom: GameRoom | null;
+  currentRoom: Room | null;
+  roomId: string | null;
+  mySlot: number | null;
   isHost: boolean;
-  isLoading: boolean;
   error: string | null;
-}
+  loading: boolean;
+  publicRooms: PublicRoomInfo[];
 
-interface RoomActions {
-  createRoom: (
-    hostUserId: string,
-    hostUsername: string,
-    hostDisplayName: string,
-    maxPlayers?: number,
-    ruleOptions?: RuleOptions
-  ) => Promise<GameRoom>;
-  joinRoom: (
-    roomCode: string,
-    userId: string,
-    username: string,
-    displayName: string
-  ) => Promise<GameRoom>;
-  leaveRoom: (roomId: string, userId: string) => Promise<void>;
-  setReady: (roomId: string, userId: string, ready: boolean) => Promise<void>;
-  startGame: (roomId: string) => Promise<void>;
+  createRoom: (settings: RoomSettings, playerName: string) => Promise<string | null>;
+  joinRoom: (code: string, playerName: string) => Promise<string | null>;
+  leaveRoom: () => Promise<void>;
+  setReady: (ready: boolean) => Promise<void>;
+  startGame: () => Promise<boolean>;
   subscribeToRoom: (roomId: string) => () => void;
-  clearRoom: () => void;
+  fetchPublicRooms: () => Promise<void>;
+  cleanup: () => void;
 }
 
-type RoomStore = RoomState & RoomActions;
+// ─── Helpers ─────────────────────────────────────────────────────
 
-export const useRoomStore = create<RoomStore>((set, get) => ({
-  // State
+function generateRoomCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+function getUid(): string | null {
+  return firebaseAuth?.currentUser?.uid ?? null;
+}
+
+// ─── Store ───────────────────────────────────────────────────────
+
+export const useRoomStore = create<RoomState>((set, get) => ({
   currentRoom: null,
+  roomId: null,
+  mySlot: null,
   isHost: false,
-  isLoading: false,
   error: null,
+  loading: false,
+  publicRooms: [],
 
-  // Actions
-  createRoom: async (
-    hostUserId: string,
-    hostUsername: string,
-    hostDisplayName: string,
-    maxPlayers = 4,
-    ruleOptions = {}
-  ) => {
-    try {
-      set({ isLoading: true, error: null });
-
-      // Generate unique room code
-      const roomCode = await generateUniqueRoomCode();
-
-      // Create room document
-      const roomData: Omit<GameRoom, 'id' | 'createdAt'> & { createdAt: any } = {
-        roomCode,
-        hostUserId,
-        players: [
-          {
-            userId: hostUserId,
-            username: hostUsername,
-            displayName: hostDisplayName,
-            teamId: 1,
-            isReady: false,
-            slot: 0,
-          },
-        ],
-        maxPlayers,
-        status: 'waiting',
-        gameMode: 'online',
-        ruleOptions,
-        createdAt: new Date(),
-      };
-
-      const docRef = await firebaseFirestore
-        .collection(COLLECTIONS.GAME_ROOMS)
-        .add(roomData);
-
-      const room: GameRoom = {
-        ...roomData,
-        id: docRef.id,
-        createdAt: roomData.createdAt,
-      };
-
-      set({
-        currentRoom: room,
-        isHost: true,
-        isLoading: false,
-      });
-
-      return room;
-    } catch (error: any) {
-      console.error('Create room error:', error);
-      set({
-        error: error.message || 'Failed to create room',
-        isLoading: false,
-      });
-      throw error;
+  createRoom: async (settings, playerName) => {
+    const db = firebaseDatabase;
+    const uid = getUid();
+    if (!db || !uid) {
+      set({ error: "Not authenticated" });
+      return null;
     }
-  },
 
-  joinRoom: async (
-    roomCode: string,
-    userId: string,
-    username: string,
-    displayName: string
-  ) => {
+    set({ loading: true, error: null });
+
     try {
-      set({ isLoading: true, error: null });
-
-      // Find room by code
-      const roomsSnapshot = await firebaseFirestore
-        .collection(COLLECTIONS.GAME_ROOMS)
-        .where('roomCode', '==', roomCode.toUpperCase())
-        .where('status', 'in', ['waiting', 'ready'])
-        .get();
-
-      if (roomsSnapshot.empty) {
-        throw new Error('Room not found or already started');
+      // Generate unique room code (check for collisions)
+      let code = generateRoomCode();
+      let attempts = 0;
+      while (attempts < 10) {
+        const existing = await db
+          .ref(RTDB_PATHS.GAME_ROOMS)
+          .orderByChild("code")
+          .equalTo(code)
+          .once("value");
+        if (!existing.exists()) break;
+        code = generateRoomCode();
+        attempts++;
       }
 
-      const roomDoc = roomsSnapshot.docs[0];
-      const roomData = roomDoc.data();
+      const roomRef = db.ref(RTDB_PATHS.GAME_ROOMS).push();
+      const roomId = roomRef.key!;
 
-      // Check if room is full
-      if (roomData.players.length >= roomData.maxPlayers) {
-        throw new Error('Room is full');
-      }
-
-      // Check if user already in room
-      if (roomData.players.some((p: RoomPlayer) => p.userId === userId)) {
-        throw new Error('You are already in this room');
-      }
-
-      // Determine team assignment (alternate teams)
-      const teamId = (roomData.players.length % 2 === 0 ? 1 : 2) as 1 | 2;
-
-      // Add player to room
-      const newPlayer: RoomPlayer = {
-        userId,
-        username,
-        displayName,
-        teamId,
-        isReady: false,
-        slot: roomData.players.length,
-      };
-
-      await roomDoc.ref.update({
-        players: [...roomData.players, newPlayer],
-      });
-
-      // Get updated room data
-      const updatedDoc = await roomDoc.ref.get();
-      const updatedData = updatedDoc.data()!;
-
-      const room: GameRoom = {
-        id: roomDoc.id,
-        roomCode: updatedData.roomCode,
-        hostUserId: updatedData.hostUserId,
-        players: updatedData.players,
-        maxPlayers: updatedData.maxPlayers,
-        status: updatedData.status,
-        gameMode: updatedData.gameMode,
-        ruleOptions: updatedData.ruleOptions,
-        createdAt: updatedData.createdAt?.toDate() || new Date(),
-        gameStateRef: updatedData.gameStateRef,
-      };
-
-      set({
-        currentRoom: room,
-        isHost: room.hostUserId === userId,
-        isLoading: false,
-      });
-
-      return room;
-    } catch (error: any) {
-      console.error('Join room error:', error);
-      set({
-        error: error.message || 'Failed to join room',
-        isLoading: false,
-      });
-      throw error;
-    }
-  },
-
-  leaveRoom: async (roomId: string, userId: string) => {
-    try {
-      set({ isLoading: true, error: null });
-
-      const roomRef = firebaseFirestore
-        .collection(COLLECTIONS.GAME_ROOMS)
-        .doc(roomId);
-
-      const roomDoc = await roomRef.get();
-      
-      if (!roomDoc.exists) {
-        throw new Error('Room not found');
-      }
-
-      const roomData = roomDoc.data()!;
-      const remainingPlayers = roomData.players.filter(
-        (p: RoomPlayer) => p.userId !== userId
-      );
-
-      if (remainingPlayers.length === 0) {
-        // Delete room if no players left
-        await roomRef.delete();
-      } else if (roomData.hostUserId === userId) {
-        // Transfer host to next player
-        await roomRef.update({
-          players: remainingPlayers,
-          hostUserId: remainingPlayers[0].userId,
-        });
-      } else {
-        // Just remove the player
-        await roomRef.update({
-          players: remainingPlayers,
-        });
-      }
-
-      set({
-        currentRoom: null,
-        isHost: false,
-        isLoading: false,
-      });
-    } catch (error: any) {
-      console.error('Leave room error:', error);
-      set({
-        error: error.message || 'Failed to leave room',
-        isLoading: false,
-      });
-      throw error;
-    }
-  },
-
-  setReady: async (roomId: string, userId: string, ready: boolean) => {
-    try {
-      const roomRef = firebaseFirestore
-        .collection(COLLECTIONS.GAME_ROOMS)
-        .doc(roomId);
-
-      const roomDoc = await roomRef.get();
-      
-      if (!roomDoc.exists) {
-        throw new Error('Room not found');
-      }
-
-      const roomData = roomDoc.data()!;
-      const updatedPlayers = roomData.players.map((p: RoomPlayer) =>
-        p.userId === userId ? { ...p, isReady: ready } : p
-      );
-
-      await roomRef.update({
-        players: updatedPlayers,
-      });
-    } catch (error: any) {
-      console.error('Set ready error:', error);
-      throw error;
-    }
-  },
-
-  startGame: async (roomId: string) => {
-    try {
-      set({ isLoading: true, error: null });
-
-      const roomRef = firebaseFirestore
-        .collection(COLLECTIONS.GAME_ROOMS)
-        .doc(roomId);
-
-      const roomDoc = await roomRef.get();
-      
-      if (!roomDoc.exists) {
-        throw new Error('Room not found');
-      }
-
-      const roomData = roomDoc.data()!;
-
-      // Check if all players are ready
-      const allReady = roomData.players.every((p: RoomPlayer) => p.isReady);
-      
-      if (!allReady) {
-        throw new Error('Not all players are ready');
-      }
-
-      // Check minimum players (at least 2 for initial implementation)
-      if (roomData.players.length < 2) {
-        throw new Error('Need at least 2 players to start');
-      }
-
-      // Update room status to playing
-      await roomRef.update({
-        status: 'playing',
-      });
-
-      set({ isLoading: false });
-    } catch (error: any) {
-      console.error('Start game error:', error);
-      set({
-        error: error.message || 'Failed to start game',
-        isLoading: false,
-      });
-      throw error;
-    }
-  },
-
-  subscribeToRoom: (roomId: string) => {
-    const unsubscribe = firebaseFirestore
-      .collection(COLLECTIONS.GAME_ROOMS)
-      .doc(roomId)
-      .onSnapshot(
-        (doc) => {
-          if (doc.exists) {
-            const data = doc.data()!;
-            const room: GameRoom = {
-              id: doc.id,
-              roomCode: data.roomCode,
-              hostUserId: data.hostUserId,
-              players: data.players,
-              maxPlayers: data.maxPlayers,
-              status: data.status,
-              gameMode: data.gameMode,
-              ruleOptions: data.ruleOptions,
-              createdAt: data.createdAt?.toDate() || new Date(),
-              gameStateRef: data.gameStateRef,
-            };
-
-            const { currentRoom } = get();
-            const userId = room.players.find(p => 
-              currentRoom?.players.some(cp => cp.userId === p.userId)
-            )?.userId;
-
-            set({
-              currentRoom: room,
-              isHost: userId ? room.hostUserId === userId : false,
-            });
-          } else {
-            // Room was deleted
-            set({
-              currentRoom: null,
-              isHost: false,
-            });
-          }
+      const room: Room = {
+        id: roomId,
+        code,
+        hostId: uid,
+        settings,
+        status: "waiting",
+        players: {
+          [uid]: { name: playerName, slot: 0, ready: false },
         },
-        (error) => {
-          console.error('Room subscription error:', error);
-          set({ error: error.message });
-        }
-      );
+        createdAt: Date.now(),
+      };
 
-    return unsubscribe;
+      await roomRef.set(room);
+
+      // Add to public room index if public
+      if (settings.isPublic) {
+        await db.ref(`publicRooms/${roomId}`).set({
+          code,
+          hostName: playerName,
+          numPlayers: settings.numPlayers,
+          currentPlayers: 1,
+          targetScore: settings.targetScore,
+          createdAt: Date.now(),
+        });
+      }
+
+      // Auto-remove player on disconnect
+      db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}/players/${uid}`).onDisconnect().remove();
+
+      set({
+        currentRoom: room,
+        roomId,
+        mySlot: 0,
+        isHost: true,
+        loading: false,
+      });
+
+      return roomId;
+    } catch (err: any) {
+      set({ error: err.message || "Failed to create room", loading: false });
+      return null;
+    }
   },
 
-  clearRoom: () => {
+  joinRoom: async (code, playerName) => {
+    const db = firebaseDatabase;
+    const uid = getUid();
+    if (!db || !uid) {
+      set({ error: "Not authenticated" });
+      return null;
+    }
+
+    set({ loading: true, error: null });
+
+    try {
+      // Find room by code
+      const snapshot = await db
+        .ref(RTDB_PATHS.GAME_ROOMS)
+        .orderByChild("code")
+        .equalTo(code.toUpperCase())
+        .once("value");
+
+      if (!snapshot.exists()) {
+        set({ error: "Room not found", loading: false });
+        return null;
+      }
+
+      let roomId = "";
+      let roomData: Room | null = null;
+      snapshot.forEach((child) => {
+        roomId = child.key!;
+        roomData = child.val() as Room;
+        return true;
+      });
+
+      if (!roomData || !roomId) {
+        set({ error: "Room not found", loading: false });
+        return null;
+      }
+
+      const room = roomData as Room;
+
+      if (room.status !== "waiting") {
+        set({ error: "Game already in progress", loading: false });
+        return null;
+      }
+
+      // Already in room?
+      if (room.players[uid]) {
+        set({
+          currentRoom: room,
+          roomId,
+          mySlot: room.players[uid].slot,
+          isHost: room.hostId === uid,
+          loading: false,
+        });
+        return roomId;
+      }
+
+      // Room full?
+      const currentCount = Object.keys(room.players).length;
+      if (currentCount >= room.settings.numPlayers) {
+        set({ error: "Room is full", loading: false });
+        return null;
+      }
+
+      // Find next slot
+      const takenSlots = new Set(Object.values(room.players).map((p) => p.slot));
+      let nextSlot = 0;
+      while (takenSlots.has(nextSlot)) nextSlot++;
+
+      // Add player
+      const playerRef = db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}/players/${uid}`);
+      await playerRef.set({ name: playerName, slot: nextSlot, ready: false });
+      playerRef.onDisconnect().remove();
+
+      // Update public room index
+      if (room.settings.isPublic) {
+        const newCount = currentCount + 1;
+        await db.ref(`publicRooms/${roomId}/currentPlayers`).set(newCount);
+        if (newCount >= room.settings.numPlayers) {
+          await db.ref(`publicRooms/${roomId}`).remove();
+        }
+      }
+
+      set({
+        currentRoom: {
+          ...room,
+          players: { ...room.players, [uid]: { name: playerName, slot: nextSlot, ready: false } },
+        },
+        roomId,
+        mySlot: nextSlot,
+        isHost: false,
+        loading: false,
+      });
+
+      return roomId;
+    } catch (err: any) {
+      set({ error: err.message || "Failed to join room", loading: false });
+      return null;
+    }
+  },
+
+  leaveRoom: async () => {
+    const db = firebaseDatabase;
+    const uid = getUid();
+    const { roomId, currentRoom } = get();
+    if (!db || !uid || !roomId) return;
+
+    try {
+      await db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}/players/${uid}`).remove();
+
+      if (currentRoom?.hostId === uid) {
+        const remaining = Object.keys(currentRoom.players).filter((id) => id !== uid);
+        if (remaining.length > 0) {
+          await db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}/hostId`).set(remaining[0]);
+        } else {
+          await db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}`).remove();
+          await db.ref(`publicRooms/${roomId}`).remove();
+        }
+      }
+
+      if (currentRoom?.settings.isPublic) {
+        const count = Object.keys(currentRoom.players).length - 1;
+        if (count > 0) {
+          await db.ref(`publicRooms/${roomId}/currentPlayers`).set(count);
+        }
+      }
+
+      set({ currentRoom: null, roomId: null, mySlot: null, isHost: false });
+    } catch (err: any) {
+      set({ error: err.message || "Failed to leave room" });
+    }
+  },
+
+  setReady: async (ready) => {
+    const db = firebaseDatabase;
+    const uid = getUid();
+    const { roomId } = get();
+    if (!db || !uid || !roomId) return;
+
+    await db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}/players/${uid}/ready`).set(ready);
+  },
+
+  startGame: async () => {
+    const db = firebaseDatabase;
+    const uid = getUid();
+    const { roomId, currentRoom } = get();
+    if (!db || !uid || !roomId || !currentRoom) return false;
+
+    if (currentRoom.hostId !== uid) {
+      set({ error: "Only the host can start" });
+      return false;
+    }
+
+    const players = Object.values(currentRoom.players);
+    if (players.length < currentRoom.settings.numPlayers) {
+      set({ error: "Waiting for more players" });
+      return false;
+    }
+    if (!players.every((p) => p.ready)) {
+      set({ error: "Not all players are ready" });
+      return false;
+    }
+
+    try {
+      await db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}/status`).set("playing");
+      await db.ref(`publicRooms/${roomId}`).remove();
+      return true;
+    } catch (err: any) {
+      set({ error: err.message || "Failed to start game" });
+      return false;
+    }
+  },
+
+  subscribeToRoom: (roomId) => {
+    const db = firebaseDatabase;
+    const uid = getUid();
+    if (!db || !uid) return () => {};
+
+    const roomRef = db.ref(`${RTDB_PATHS.GAME_ROOMS}/${roomId}`);
+
+    const listener = roomRef.on("value", (snapshot) => {
+      if (!snapshot.exists()) {
+        set({ currentRoom: null, roomId: null, mySlot: null, isHost: false });
+        return;
+      }
+
+      const room = snapshot.val() as Room;
+      room.id = roomId;
+
+      const myPlayer = room.players?.[uid];
+      set({
+        currentRoom: room,
+        roomId,
+        mySlot: myPlayer?.slot ?? null,
+        isHost: room.hostId === uid,
+      });
+    });
+
+    return () => roomRef.off("value", listener);
+  },
+
+  fetchPublicRooms: async () => {
+    const db = firebaseDatabase;
+    if (!db) return;
+
+    try {
+      const snapshot = await db
+        .ref("publicRooms")
+        .orderByChild("createdAt")
+        .limitToLast(20)
+        .once("value");
+
+      if (!snapshot.exists()) {
+        set({ publicRooms: [] });
+        return;
+      }
+
+      const rooms: PublicRoomInfo[] = [];
+      snapshot.forEach((child) => {
+        rooms.push({ id: child.key!, ...child.val() });
+        return undefined;
+      });
+
+      rooms.reverse();
+      set({ publicRooms: rooms });
+    } catch (err: any) {
+      set({ error: err.message || "Failed to fetch rooms" });
+    }
+  },
+
+  cleanup: () => {
     set({
       currentRoom: null,
+      roomId: null,
+      mySlot: null,
       isHost: false,
       error: null,
+      loading: false,
+      publicRooms: [],
     });
   },
 }));

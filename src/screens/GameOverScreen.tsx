@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { View, Text, StatusBar, StyleSheet } from "react-native";
+import { View, Text, StatusBar, StyleSheet, ScrollView } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RouteProp } from "@react-navigation/native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -14,6 +15,8 @@ import Animated, {
 } from "react-native-reanimated";
 import Button from "../components/Button";
 import { useGameStore } from "../store/gameStore";
+import { useOnlineGameStore } from "../store/onlineGameStore";
+import { useRoomStore } from "../store/roomStore";
 import Confetti from "../components/Confetti";
 import Sparkle from "../components/Sparkle";
 import { playVictoryFanfare, playDefeatSound } from "../utils/sounds";
@@ -24,23 +27,45 @@ type GameOverNavProp = NativeStackNavigationProp<
   RootStackParamList,
   "GameOver"
 >;
+type GameOverRouteProp = RouteProp<RootStackParamList, "GameOver">;
 
 export default function GameOverScreen() {
   const navigation = useNavigation<GameOverNavProp>();
+  const route = useRoute<GameOverRouteProp>();
   const { scores, handsWon, resetGame } = useGameStore();
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
   const hasPlayedSound = useRef(false);
 
-  const winner = handsWon.team1 >= 5 ? 1 : handsWon.team2 >= 5 ? 2 : null;
-  const youWon = winner === 1;
+  // Determine mode from route params
+  const mode = route.params?.mode ?? "local";
+  const isOnline = mode === "online";
+
+  // Online data from route params
+  const onlineWinnerIndex = route.params?.winnerIndex ?? 0;
+  const onlinePlayerNames = route.params?.playerNames ?? [];
+  const onlineScores = route.params?.scores ?? [];
+  const onlineTargetScore = route.params?.targetScore ?? 25;
+
+  // Get humanPlayerIndex for online mode
+  const mySlot = useOnlineGameStore((s) => s.mySlot);
+  const humanPlayerIndex = mySlot ?? 0;
+
+  // Determine if "you" won
+  const youWon = isOnline
+    ? onlineWinnerIndex === humanPlayerIndex
+    : (handsWon.team1 >= 5 ? true : false);
+
+  // Winner name for online
+  const winnerName = isOnline
+    ? (onlinePlayerNames[onlineWinnerIndex] ?? "Player")
+    : undefined;
 
   // Play game end sound once
   useEffect(() => {
     if (!hasPlayedSound.current) {
       hasPlayedSound.current = true;
       if (youWon) {
-        // Delay victory fanfare to sync with animations
         setTimeout(() => playVictoryFanfare(), 600);
       } else {
         setTimeout(() => playDefeatSound(), 500);
@@ -153,19 +178,42 @@ export default function GameOverScreen() {
   }));
 
   const handlePlayAgain = () => {
-    resetGame();
-    navigation.navigate("GameSetup");
+    if (isOnline) {
+      // Clean up online game and go back to lobby or multiplayer menu
+      useOnlineGameStore.getState().cleanup();
+      navigation.navigate("MultiplayerMenu");
+    } else {
+      resetGame();
+      navigation.navigate("GameSetup");
+    }
   };
 
   const handleMainMenu = () => {
-    resetGame();
+    if (isOnline) {
+      useOnlineGameStore.getState().cleanup();
+      useRoomStore.getState().cleanup();
+    } else {
+      resetGame();
+    }
     navigation.navigate("Home");
   };
+
+  // Sort online players by score (descending) for leaderboard
+  const sortedOnlinePlayers = isOnline
+    ? onlinePlayerNames
+        .map((name, idx) => ({
+          name,
+          score: onlineScores[idx] ?? 0,
+          isYou: idx === humanPlayerIndex,
+          isWinner: idx === onlineWinnerIndex,
+        }))
+        .sort((a, b) => b.score - a.score)
+    : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
-      
+
       {/* Victory glow effect */}
       {youWon && (
         <Animated.View
@@ -177,10 +225,10 @@ export default function GameOverScreen() {
           pointerEvents="none"
         />
       )}
-      
+
       {/* Confetti for victory */}
       {youWon && <Confetti visible={showConfetti} intensity="medium" duration={2500} />}
-      
+
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}
@@ -198,7 +246,7 @@ export default function GameOverScreen() {
               borderColor: youWon ? colors.gold.primary : colors.teams.team2.primary,
               marginBottom: 32,
               width: "100%",
-              maxWidth: 320,
+              maxWidth: 340,
             },
             cardStyle,
           ]}
@@ -221,7 +269,7 @@ export default function GameOverScreen() {
               {youWon ? "🏆" : "😔"}
             </Animated.Text>
           </View>
-          
+
           <Animated.View style={titleStyle}>
             <Text
               style={{
@@ -235,7 +283,7 @@ export default function GameOverScreen() {
             >
               {youWon ? "VICTORY!" : "Defeat"}
             </Text>
-            
+
             <Text
               style={{
                 fontSize: 16,
@@ -244,16 +292,20 @@ export default function GameOverScreen() {
                 marginBottom: 16,
               }}
             >
-              {youWon ? "Congratulations! Your team wins!" : "Better luck next time"}
+              {isOnline
+                ? youWon
+                  ? "You won the game!"
+                  : `${winnerName} wins!`
+                : youWon
+                  ? "Congratulations! Your team wins!"
+                  : "Better luck next time"}
             </Text>
           </Animated.View>
 
-          {/* Score display */}
+          {/* Score display — branches on mode */}
           <Animated.View
             style={[
               {
-                flexDirection: "row",
-                alignItems: "center",
                 backgroundColor: colors.background.primary,
                 borderRadius: borderRadius.lg,
                 padding: 16,
@@ -262,65 +314,144 @@ export default function GameOverScreen() {
               scoreStyle,
             ]}
           >
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={{ color: colors.teams.team1.light, fontSize: 12, marginBottom: 4 }}>
-                Your Team
-              </Text>
-              {/* Hands indicators */}
-              <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                {Array.from({ length: 5 }).map((_, i) => (
+            {isOnline ? (
+              /* ─── Online: Individual player leaderboard ─── */
+              <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                {sortedOnlinePlayers.map((player, rank) => (
                   <View
-                    key={`t1-${i}`}
+                    key={`player-${rank}`}
                     style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 7,
-                      backgroundColor: i < handsWon.team1 ? colors.teams.team1.primary : "transparent",
-                      borderWidth: 2,
-                      borderColor: colors.teams.team1.primary,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 8,
+                      paddingHorizontal: 12,
+                      backgroundColor: player.isWinner
+                        ? colors.gold.primary + "20"
+                        : player.isYou
+                          ? colors.teams.team1.bg
+                          : "transparent",
+                      borderRadius: borderRadius.md,
+                      marginBottom: 4,
+                      borderWidth: player.isWinner ? 1 : 0,
+                      borderColor: colors.gold.primary,
                     }}
-                  />
+                  >
+                    {/* Rank */}
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        fontWeight: "bold",
+                        color: rank === 0 ? colors.gold.primary : colors.text.muted,
+                        width: 28,
+                      }}
+                    >
+                      {rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : `${rank + 1}.`}
+                    </Text>
+
+                    {/* Name */}
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontSize: 15,
+                        fontWeight: player.isYou ? "700" : "500",
+                        color: player.isYou ? colors.teams.team1.light : colors.text.primary,
+                      }}
+                    >
+                      {player.name}{player.isYou ? " (You)" : ""}
+                    </Text>
+
+                    {/* Score */}
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        fontWeight: "bold",
+                        color: player.isWinner ? colors.gold.primary : colors.text.secondary,
+                      }}
+                    >
+                      {player.score}
+                    </Text>
+                  </View>
                 ))}
+
+                {/* Target score reference */}
+                <Text
+                  style={{
+                    textAlign: "center",
+                    color: colors.text.muted,
+                    fontSize: 11,
+                    marginTop: 8,
+                  }}
+                >
+                  Target: {onlineTargetScore} points
+                </Text>
+              </ScrollView>
+            ) : (
+              /* ─── Local: Team-based score display ─── */
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ color: colors.teams.team1.light, fontSize: 12, marginBottom: 4 }}>
+                    Your Team
+                  </Text>
+                  {/* Hands indicators */}
+                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <View
+                        key={`t1-${i}`}
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 7,
+                          backgroundColor: i < handsWon.team1 ? colors.teams.team1.primary : "transparent",
+                          borderWidth: 2,
+                          borderColor: colors.teams.team1.primary,
+                        }}
+                      />
+                    ))}
+                  </View>
+                  <Text style={{ color: colors.text.muted, fontSize: 11 }}>
+                    {handsWon.team1} hands
+                  </Text>
+                </View>
+
+                <Text style={{ color: colors.text.muted, fontSize: 20, fontWeight: "bold", marginHorizontal: 12 }}>
+                  vs
+                </Text>
+
+                <View style={{ flex: 1, alignItems: "center" }}>
+                  <Text style={{ color: colors.teams.team2.light, fontSize: 12, marginBottom: 4 }}>
+                    Opponents
+                  </Text>
+                  {/* Hands indicators */}
+                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <View
+                        key={`t2-${i}`}
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 7,
+                          backgroundColor: i < handsWon.team2 ? colors.teams.team2.primary : "transparent",
+                          borderWidth: 2,
+                          borderColor: colors.teams.team2.primary,
+                        }}
+                      />
+                    ))}
+                  </View>
+                  <Text style={{ color: colors.text.muted, fontSize: 11 }}>
+                    {handsWon.team2} hands
+                  </Text>
+                </View>
               </View>
-              <Text style={{ color: colors.text.muted, fontSize: 11 }}>
-                {handsWon.team1} hands
-              </Text>
-            </View>
-            
-            <Text style={{ color: colors.text.muted, fontSize: 20, fontWeight: "bold", marginHorizontal: 12 }}>
-              vs
-            </Text>
-            
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={{ color: colors.teams.team2.light, fontSize: 12, marginBottom: 4 }}>
-                Opponents
-              </Text>
-              {/* Hands indicators */}
-              <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t2-${i}`}
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 7,
-                      backgroundColor: i < handsWon.team2 ? colors.teams.team2.primary : "transparent",
-                      borderWidth: 2,
-                      borderColor: colors.teams.team2.primary,
-                    }}
-                  />
-                ))}
-              </View>
-              <Text style={{ color: colors.text.muted, fontSize: 11 }}>
-                {handsWon.team2} hands
-              </Text>
-            </View>
+            )}
           </Animated.View>
         </Animated.View>
 
         {/* Buttons */}
         <Animated.View style={[{ gap: 16, width: "100%", maxWidth: 280 }, buttonsStyle]}>
-          <Button title="Play Again" onPress={handlePlayAgain} />
+          <Button
+            title={isOnline ? "New Game" : "Play Again"}
+            onPress={handlePlayAgain}
+          />
           <Button title="Main Menu" variant="outline" onPress={handleMainMenu} />
         </Animated.View>
       </LinearGradient>

@@ -69,6 +69,7 @@ export const colors = {
     success: '#22c55e',      // Green for valid moves
     warning: '#f59e0b',      // Amber for warnings
     error: '#ef4444',        // Red for errors
+    info: '#3b82f6',         // Blue for informational states
   },
 
   // Soft UI Specific

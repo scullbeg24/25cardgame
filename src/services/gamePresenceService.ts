@@ -15,6 +15,7 @@ export class GamePresenceService {
    * Start tracking presence for a specific game
    */
   start(gameId: string, userId: string) {
+    if (!firebaseDatabase) return;
     this.gameId = gameId;
     this.userId = userId;
 
@@ -62,6 +63,7 @@ export class GamePresenceService {
     userId: string,
     callback: (connected: boolean) => void
   ): () => void {
+    if (!firebaseDatabase) return () => {};
     const ref = firebaseDatabase.ref(
       `${RTDB_PATHS.GAMES}/${gameId}/players/${userId}/connected`
     );
@@ -82,6 +84,7 @@ export class GamePresenceService {
     gameId: string,
     callback: (players: Record<string, boolean>) => void
   ): () => void {
+    if (!firebaseDatabase) return () => {};
     const ref = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}/players`);
 
     const listener = ref.on('value', (snapshot: any) => {
@@ -112,6 +115,7 @@ export class GamePresenceService {
     userId: string,
     reason: 'disconnect' | 'manual'
   ): Promise<void> {
+    if (!firebaseDatabase) return;
     try {
       const gameRef = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}`);
       
@@ -156,6 +160,7 @@ export class GamePresenceService {
    * Check if enough players are connected to continue
    */
   static async checkMinimumPlayers(gameId: string): Promise<boolean> {
+    if (!firebaseDatabase) return false;
     try {
       const ref = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}/players`);
       const snapshot = await ref.once('value');

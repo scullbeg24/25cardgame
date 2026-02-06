@@ -23,6 +23,7 @@ interface PlayerInfoCardProps {
 
 export default function PlayerInfoCard({
   name,
+  score,
   isCurrentPlayer,
   isYou = false,
   teamIndex,
@@ -53,7 +54,6 @@ export default function PlayerInfoCard({
 
   const teamColor = teamIndex === 0 ? colors.teams.team1 : colors.teams.team2;
   const displayName = isYou ? "You" : name;
-  const initial = isYou ? "Y" : name.charAt(0).toUpperCase();
   
   return (
     <Animated.View
@@ -63,28 +63,28 @@ export default function PlayerInfoCard({
           alignItems: "center",
           backgroundColor: isCurrentPlayer ? teamColor.bgActive : teamColor.bg,
           borderRadius: borderRadius.round,
-          paddingVertical: 4,
-          paddingHorizontal: 8,
+          paddingVertical: 3,
+          paddingHorizontal: 7,
           borderWidth: isCurrentPlayer ? 2 : 1,
           borderColor: isCurrentPlayer ? colors.gold.primary : teamColor.primary,
         },
         badgeStyle,
       ]}
     >
-      {/* Small avatar circle */}
+      {/* Score circle */}
       <View
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 11,
+          width: 24,
+          height: 24,
+          borderRadius: 12,
           backgroundColor: teamColor.primary,
           alignItems: "center",
           justifyContent: "center",
-          marginRight: 6,
+          marginRight: 5,
         }}
       >
-        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
-          {initial}
+        <Text style={{ color: "#fff", fontSize: score >= 10 ? 9 : 11, fontWeight: "bold" }}>
+          {score}
         </Text>
       </View>
 
@@ -94,6 +94,7 @@ export default function PlayerInfoCard({
           color: isCurrentPlayer ? colors.gold.light : teamColor.light,
           fontSize: 11,
           fontWeight: "600",
+          maxWidth: 55,
         }}
         numberOfLines={1}
       >

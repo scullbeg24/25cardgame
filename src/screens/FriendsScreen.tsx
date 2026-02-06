@@ -315,12 +315,12 @@ export default function FriendsScreen() {
                                 }}
                               >
                                 <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.gold.primary }}>
-                                  {profile.displayName.charAt(0).toUpperCase()}
+                                  {(profile.displayName || profile.username || '?').charAt(0).toUpperCase()}
                                 </Text>
                               </View>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text.primary }}>
-                                  {profile.displayName}
+                                  {profile.displayName || profile.username || 'Unknown'}
                                 </Text>
                                 <Text style={{ fontSize: 14, color: colors.text.secondary }}>
                                   @{profile.username}
@@ -399,12 +399,12 @@ export default function FriendsScreen() {
                               }}
                             >
                               <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.gold.primary }}>
-                                {profile.displayName.charAt(0).toUpperCase()}
+                                {(profile.displayName || profile.username || '?').charAt(0).toUpperCase()}
                               </Text>
                             </View>
                             <View style={{ flex: 1 }}>
                               <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text.primary }}>
-                                {profile.displayName}
+                                {profile.displayName || profile.username || 'Unknown'}
                               </Text>
                               <Text style={{ fontSize: 14, color: colors.text.secondary }}>
                                 @{profile.username}

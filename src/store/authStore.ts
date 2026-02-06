@@ -37,7 +37,7 @@ interface AuthActions {
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   setUser: (user: FirebaseAuthTypes.User | null) => void;
-  loadUserProfile: (uid: string) => Promise<void>;
+  loadUserProfile: (uid: string, authUser?: FirebaseAuthTypes.User) => Promise<void>;
   initialize: () => () => void;
 }
 
@@ -307,7 +307,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           username: (authUser.displayName || authUser.email || 'user').toLowerCase(),
           email: authUser.email || '',
           displayName: authUser.displayName || 'User',
-          photoURL: authUser.photoURL,
+          photoURL: authUser.photoURL ?? undefined,
           createdAt: new Date(),
           lastOnline: new Date(),
           stats: { gamesPlayed: 0, gamesWon: 0, winRate: 0 },

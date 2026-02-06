@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "entryPoint": "./index.ts",
     "experiments": {
       "typedRoutes": false
     },
@@ -19,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.patrickscully.cardgame25",
-      "googleServicesFile": "./ios/25cardgame/GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {
@@ -30,11 +29,22 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.patrickscully.cardgame25"
     },
-    "plugins": [],
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "buildReactNativeFromSource": true
+          }
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro",
-      "output": "single"
+      "bundler": "metro"
     }
   }
 }

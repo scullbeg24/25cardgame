@@ -116,14 +116,14 @@ export default function UserSearchBar({
                 }}
               >
                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.gold.primary }}>
-                  {user.displayName.charAt(0).toUpperCase()}
+                  {(user.displayName || user.username || '?').charAt(0).toUpperCase()}
                 </Text>
               </View>
 
               {/* User Info */}
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text.primary }}>
-                  {user.displayName}
+                  {user.displayName || user.username || 'Unknown'}
                 </Text>
                 <Text style={{ fontSize: 14, color: colors.text.secondary }}>
                   @{user.username}

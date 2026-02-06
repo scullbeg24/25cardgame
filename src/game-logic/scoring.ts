@@ -17,17 +17,18 @@ export interface TrickWithPlayers {
 }
 
 /**
- * Get the player index (0-3) who won the trick.
- * playOrder: order cards were played [player0, player1, player2, player3]
+ * Get the player index who won the trick.
+ * @param numPlayers - Number of players in the game (default 4 for backward compat)
  */
 export function getTrickWinner(
   trick: Card[],
   ledSuit: Suit,
   trumpSuit: Suit,
-  firstPlayerIndex: number
+  firstPlayerIndex: number,
+  numPlayers: number = 4
 ): number {
   const winningCardIdx = getWinningCardIndex(trick, ledSuit, trumpSuit);
-  return (firstPlayerIndex + winningCardIdx) % 4;
+  return (firstPlayerIndex + winningCardIdx) % numPlayers;
 }
 
 /**
@@ -79,4 +80,47 @@ export function checkGameWinner(
   if (handsWon.team1 >= HANDS_TO_WIN_GAME) return 1;
   if (handsWon.team2 >= HANDS_TO_WIN_GAME) return 2;
   return null;
+}
+
+// ─── Individual Scoring (for multiplayer, no teams) ─────────────
+
+/**
+ * Add trick points to individual scores array.
+ * Returns a new array with the winner's score incremented.
+ */
+export function addTrickPointsIndividual(
+  scores: number[],
+  winnerIndex: number,
+  points: number = POINTS_PER_TRICK
+): number[] {
+  return scores.map((s, i) => (i === winnerIndex ? s + points : s));
+}
+
+/**
+ * Check if any individual player has reached the target score.
+ * Returns the player index who won, or null.
+ * If multiple players exceed target simultaneously, highest score wins.
+ */
+export function checkIndividualWinner(
+  scores: number[],
+  targetScore: number = POINTS_TO_WIN_HAND
+): number | null {
+  let maxScore = -1;
+  let winner: number | null = null;
+
+  for (let i = 0; i < scores.length; i++) {
+    if (scores[i] >= targetScore && scores[i] > maxScore) {
+      maxScore = scores[i];
+      winner = i;
+    }
+  }
+
+  return winner;
+}
+
+/**
+ * Create initial individual scores array for N players (all zeros).
+ */
+export function createIndividualScores(numPlayers: number): number[] {
+  return new Array(numPlayers).fill(0);
 }
