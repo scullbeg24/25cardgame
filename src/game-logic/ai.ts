@@ -11,6 +11,7 @@ import { isTrump, getTrumpRank, getNonTrumpRank } from "./cards";
 import { getValidMoves, type RuleOptions } from "./rules";
 import { getTeamForPlayer } from "./scoring";
 import type { AIDifficulty } from "../utils/constants";
+import type { TeamScores } from "./types";
 
 export type TrickEntry = Card | { card: Card };
 
@@ -21,7 +22,9 @@ export interface AIGameContext {
   ledSuit: Suit | null;
   currentPlayerIndex: number;
   firstPlayerThisTrick: number;
-  scores: { team1: number; team2: number };
+  scores: TeamScores;
+  playerTeams: number[];
+  playerCount: number;
   ruleOptions?: RuleOptions;
 }
 
@@ -129,27 +132,40 @@ function selectCardToLead(
   });
 }
 
+/** Get indices of teammates (same team, not self). Empty array in FFA. */
+function getTeammates(
+  currentPlayerIndex: number,
+  playerTeams: number[],
+  playerCount: number
+): number[] {
+  const myTeam = playerTeams[currentPlayerIndex];
+  const teammates: number[] = [];
+  for (let i = 0; i < playerCount; i++) {
+    if (i !== currentPlayerIndex && playerTeams[i] === myTeam) {
+      teammates.push(i);
+    }
+  }
+  return teammates;
+}
+
 function selectCardToFollow(
   context: AIGameContext,
   validMoves: Card[]
 ): Card {
-  const { currentTrick, trumpSuit, ledSuit, firstPlayerThisTrick, currentPlayerIndex } = context;
+  const { currentTrick, trumpSuit, ledSuit, firstPlayerThisTrick, currentPlayerIndex, playerTeams, playerCount } = context;
   const trickCards = getTrickCards(currentTrick);
   const firstCard = trickCards[0];
   const effectiveLedSuit = ledSuit ?? (firstCard?.suit as Suit) ?? trumpSuit;
 
-  const partnerIndex = (currentPlayerIndex + 2) % 4;
-  const partnerPlayedIndex = trickCards.findIndex(
-    (_, i) => (firstPlayerThisTrick + i) % 4 === partnerIndex
-  );
-  const partnerCard =
-    partnerPlayedIndex >= 0 ? trickCards[partnerPlayedIndex] : null;
+  const teammates = getTeammates(currentPlayerIndex, playerTeams, playerCount);
+  const isFFAMode = teammates.length === 0;
 
   const winningIdx = getWinningIndex(trickCards, effectiveLedSuit, trumpSuit);
-  const winningPlayer = (firstPlayerThisTrick + winningIdx) % 4;
-  const partnerWinning = winningPlayer === partnerIndex;
+  const winningPlayer = (firstPlayerThisTrick + winningIdx) % playerCount;
+  const teammateWinning = !isFFAMode && teammates.includes(winningPlayer);
 
-  if (partnerWinning && partnerCard) {
+  // If a teammate is winning, throw the lowest card
+  if (teammateWinning) {
     return validMoves.reduce((lowest, c) => {
       const rank = isTrump(c, trumpSuit)
         ? getTrumpRank(c, trumpSuit)
@@ -161,6 +177,7 @@ function selectCardToFollow(
     });
   }
 
+  // Try to win with the cheapest winning card
   const canWin = validMoves.filter((c) =>
     wouldBeatTrick(c, trickCards, effectiveLedSuit, trumpSuit, firstPlayerThisTrick)
   );
@@ -177,6 +194,7 @@ function selectCardToFollow(
     });
   }
 
+  // Can't win - throw the lowest card
   return validMoves.reduce((lowest, c) => {
     const rank = isTrump(c, trumpSuit)
       ? getTrumpRank(c, trumpSuit)
@@ -241,11 +259,8 @@ function selectHardCard(
   context: AIGameContext,
   validMoves: Card[]
 ): Card {
-  const aggressive = shouldPlayAggressively(
-    context.scores.team1,
-    context.scores.team2,
-    getTeamForPlayer(context.currentPlayerIndex)
-  );
+  const myTeamId = getTeamForPlayer(context.currentPlayerIndex, context.playerTeams);
+  const aggressive = shouldPlayAggressively(context.scores, myTeamId, context.playerTeams);
 
   const mediumChoice = selectMediumCard(context, validMoves);
 
@@ -297,13 +312,16 @@ function selectHardCard(
 }
 
 function shouldPlayAggressively(
-  team1Score: number,
-  team2Score: number,
-  myTeam: 1 | 2
+  scores: TeamScores,
+  myTeamId: number,
+  playerTeams: number[]
 ): boolean {
-  const myScore = myTeam === 1 ? team1Score : team2Score;
-  const oppScore = myTeam === 1 ? team2Score : team1Score;
-  return myScore < oppScore;
+  const myScore = scores[myTeamId] ?? 0;
+  const teamIds = [...new Set(playerTeams)];
+  const maxOpponentScore = Math.max(
+    ...teamIds.filter((t) => t !== myTeamId).map((t) => scores[t] ?? 0)
+  );
+  return myScore < maxOpponentScore;
 }
 
 /** Delay for AI "thinking" - returns ms based on difficulty */

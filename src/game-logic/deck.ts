@@ -1,10 +1,11 @@
 /**
  * Deck operations for Irish card game "25"
- * Fisher-Yates shuffle, deal 5 cards to 4 players, trump reveal
+ * Fisher-Yates shuffle, deal cards to players, trump reveal
  */
 
 import type { Card } from "./cards";
 import { createDeck } from "./cards";
+import { CARDS_PER_PLAYER } from "../utils/constants";
 
 /**
  * Fisher-Yates shuffle - mutates array in place, returns it
@@ -24,19 +25,20 @@ export interface DealResult {
 }
 
 /**
- * Deal 5 cards to each of 4 players.
+ * Deal 5 cards to each player.
  * Next card is turned face-up for trump. Remainder forms the pack.
  */
-export function dealCards(): DealResult {
+export function dealCards(playerCount: number = 4): DealResult {
   const deck = shuffleDeck([...createDeck()]);
+  const cardsToDeal = playerCount * CARDS_PER_PLAYER;
 
-  const hands: Card[][] = [[], [], [], []];
-  for (let i = 0; i < 20; i++) {
-    hands[i % 4].push(deck[i]);
+  const hands: Card[][] = Array.from({ length: playerCount }, () => []);
+  for (let i = 0; i < cardsToDeal; i++) {
+    hands[i % playerCount].push(deck[i]);
   }
 
-  const trumpCard = deck[20];
-  const pack = deck.slice(21);
+  const trumpCard = deck[cardsToDeal];
+  const pack = deck.slice(cardsToDeal + 1);
 
   return { hands, trumpCard, pack };
 }
@@ -48,16 +50,20 @@ export function getTrumpSuitFromCard(card: Card): Card["suit"] {
 
 /**
  * Deal 5 more cards to each player from the pack.
- * Used when all tricks are played but neither team has reached 25 points.
- * Returns new hands and remaining pack. Requires at least 20 cards in pack.
+ * Used when all tricks are played but no team has reached 25 points.
+ * Returns new hands and remaining pack, or null if pack is too small.
  */
-export function dealFromPack(pack: Card[]): { hands: Card[][]; remainingPack: Card[] } | null {
-  if (pack.length < 20) return null;
-  const toDeal = pack.slice(0, 20);
-  const remainingPack = pack.slice(20);
-  const hands: Card[][] = [[], [], [], []];
-  for (let i = 0; i < 20; i++) {
-    hands[i % 4].push(toDeal[i]);
+export function dealFromPack(
+  pack: Card[],
+  playerCount: number = 4
+): { hands: Card[][]; remainingPack: Card[] } | null {
+  const cardsNeeded = playerCount * CARDS_PER_PLAYER;
+  if (pack.length < cardsNeeded) return null;
+  const toDeal = pack.slice(0, cardsNeeded);
+  const remainingPack = pack.slice(cardsNeeded);
+  const hands: Card[][] = Array.from({ length: playerCount }, () => []);
+  for (let i = 0; i < cardsNeeded; i++) {
+    hands[i % playerCount].push(toDeal[i]);
   }
   return { hands, remainingPack };
 }

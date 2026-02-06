@@ -8,6 +8,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useEffect } from "react";
 import { colors, borderRadius } from "../theme";
+import { getTeamColors } from "../theme/colors";
 
 interface PlayerInfoCardProps {
   name: string;
@@ -15,7 +16,7 @@ interface PlayerInfoCardProps {
   tricksWon: number;
   isCurrentPlayer: boolean;
   isYou?: boolean;
-  teamIndex: 0 | 1; // 0 = your team (blue), 1 = opponent (red)
+  teamIndex: number;
   position: "top" | "left" | "right" | "bottom";
   isLeader?: boolean;
   isDealer?: boolean;
@@ -51,7 +52,7 @@ export default function PlayerInfoCard({
     opacity: isCurrentPlayer ? glowOpacity.value : 1,
   }));
 
-  const teamColor = teamIndex === 0 ? colors.teams.team1 : colors.teams.team2;
+  const teamColor = getTeamColors(teamIndex);
   const displayName = isYou ? "You" : name;
   const initial = isYou ? "Y" : name.charAt(0).toUpperCase();
   

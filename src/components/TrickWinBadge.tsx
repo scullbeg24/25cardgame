@@ -8,7 +8,7 @@ import { FloatingBadge } from "./Badge";
 
 interface TrickWinBadgeProps {
   visible: boolean;
-  teamIndex: 0 | 1;
+  teamIndex: number;
   isYourTeam: boolean;
   onHide?: () => void;
 }

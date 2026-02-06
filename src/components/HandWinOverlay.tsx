@@ -15,16 +15,19 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { colors, borderRadius, shadows } from "../theme";
+import { getTeamColors } from "../theme/colors";
+import type { TeamScores, TeamHandsWon } from "../game-logic/types";
 import Confetti from "./Confetti";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface HandWinOverlayProps {
   visible: boolean;
-  winningTeam: 1 | 2;
+  winningTeam: number;
   isYourTeam: boolean;
-  handsWon: { team1: number; team2: number };
-  finalScore: { team1: number; team2: number };
+  handsWon: TeamHandsWon;
+  finalScore: TeamScores;
+  teamCount?: number;
   onComplete?: () => void;
 }
 
@@ -34,6 +37,7 @@ export default function HandWinOverlay({
   isYourTeam,
   handsWon,
   finalScore,
+  teamCount = 2,
   onComplete,
 }: HandWinOverlayProps) {
   const backdropOpacity = useSharedValue(0);
@@ -119,10 +123,13 @@ export default function HandWinOverlay({
 
   if (!visible) return null;
 
-  const teamColor = winningTeam === 1 ? colors.teams.team1 : colors.teams.team2;
+  const winnerColors = getTeamColors(winningTeam);
   const title = isYourTeam ? "Hand Won!" : "Hand Lost";
   const emoji = isYourTeam ? "🏆" : "😔";
   const subtitle = isYourTeam ? "Your team takes the hand!" : "Opponents win this hand";
+
+  // Build team entries for score/hands display
+  const teamIds = Array.from({ length: teamCount }, (_, i) => i);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -146,7 +153,7 @@ export default function HandWinOverlay({
           style={[
             styles.card,
             {
-              borderColor: isYourTeam ? colors.gold.primary : teamColor.primary,
+              borderColor: isYourTeam ? colors.gold.primary : winnerColors.primary,
             },
             cardStyle,
           ]}
@@ -158,7 +165,7 @@ export default function HandWinOverlay({
           <Text
             style={[
               styles.title,
-              { color: isYourTeam ? colors.gold.primary : teamColor.light },
+              { color: isYourTeam ? colors.gold.primary : winnerColors.light },
             ]}
           >
             {title}
@@ -167,64 +174,55 @@ export default function HandWinOverlay({
           {/* Subtitle */}
           <Text style={styles.subtitle}>{subtitle}</Text>
 
-          {/* Score display */}
+          {/* Score display - dynamic teams */}
           <Animated.View style={[styles.scoreContainer, scoreStyle]}>
-            <View style={styles.scoreBox}>
-              <Text style={[styles.scoreLabel, { color: colors.teams.team1.light }]}>
-                Your Team
-              </Text>
-              <Text style={styles.scoreValue}>{finalScore.team1}</Text>
-            </View>
-            <Text style={styles.vs}>vs</Text>
-            <View style={styles.scoreBox}>
-              <Text style={[styles.scoreLabel, { color: colors.teams.team2.light }]}>
-                Opponents
-              </Text>
-              <Text style={styles.scoreValue}>{finalScore.team2}</Text>
-            </View>
+            {teamIds.map((teamId, i) => {
+              const tc = getTeamColors(teamId);
+              return (
+                <View key={teamId} style={{ flexDirection: "row", alignItems: "center" }}>
+                  {i > 0 && <Text style={styles.vs}>vs</Text>}
+                  <View style={styles.scoreBox}>
+                    <Text style={[styles.scoreLabel, { color: tc.light }]}>
+                      {teamId === winningTeam && isYourTeam
+                        ? "Your Team"
+                        : `Team ${teamId + 1}`}
+                    </Text>
+                    <Text style={styles.scoreValue}>{finalScore[teamId] ?? 0}</Text>
+                  </View>
+                </View>
+              );
+            })}
           </Animated.View>
 
-          {/* Hands won display */}
+          {/* Hands won display - dynamic teams */}
           <Animated.View style={[styles.handsContainer, handsStyle]}>
             <Text style={styles.handsLabel}>Hands Won</Text>
             <View style={styles.handsDisplay}>
-              {/* Team 1 hands */}
-              <View style={styles.handsTeam}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t1-${i}`}
-                    style={[
-                      styles.handDot,
-                      {
-                        backgroundColor:
-                          i < handsWon.team1
-                            ? colors.teams.team1.primary
-                            : colors.background.primary,
-                        borderColor: colors.teams.team1.primary,
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-              <Text style={styles.handsVs}>—</Text>
-              {/* Team 2 hands */}
-              <View style={styles.handsTeam}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t2-${i}`}
-                    style={[
-                      styles.handDot,
-                      {
-                        backgroundColor:
-                          i < handsWon.team2
-                            ? colors.teams.team2.primary
-                            : colors.background.primary,
-                        borderColor: colors.teams.team2.primary,
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
+              {teamIds.map((teamId, i) => {
+                const tc = getTeamColors(teamId);
+                return (
+                  <View key={teamId} style={{ flexDirection: "row", alignItems: "center" }}>
+                    {i > 0 && <Text style={styles.handsVs}>—</Text>}
+                    <View style={styles.handsTeam}>
+                      {Array.from({ length: 5 }).map((_, j) => (
+                        <View
+                          key={`t${teamId}-${j}`}
+                          style={[
+                            styles.handDot,
+                            {
+                              backgroundColor:
+                                j < (handsWon[teamId] ?? 0)
+                                  ? tc.primary
+                                  : colors.background.primary,
+                              borderColor: tc.primary,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </Animated.View>
         </Animated.View>
@@ -267,6 +265,8 @@ const styles = StyleSheet.create({
   scoreContainer: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
     backgroundColor: colors.background.primary,
     borderRadius: borderRadius.md,
     padding: 12,
@@ -276,6 +276,7 @@ const styles = StyleSheet.create({
   scoreBox: {
     flex: 1,
     alignItems: "center",
+    minWidth: 60,
   },
   scoreLabel: {
     fontSize: 10,
@@ -306,6 +307,8 @@ const styles = StyleSheet.create({
   handsDisplay: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 8,
   },
   handsTeam: {

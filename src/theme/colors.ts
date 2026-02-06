@@ -61,6 +61,55 @@ export const colors = {
       bg: 'rgba(239, 68, 68, 0.15)',
       bgActive: 'rgba(239, 68, 68, 0.3)',
     },
+    team3: {
+      primary: '#22c55e',    // Green
+      light: '#4ade80',
+      dark: '#16a34a',
+      bg: 'rgba(34, 197, 94, 0.15)',
+      bgActive: 'rgba(34, 197, 94, 0.3)',
+    },
+    team4: {
+      primary: '#a855f7',    // Purple
+      light: '#c084fc',
+      dark: '#7c3aed',
+      bg: 'rgba(168, 85, 247, 0.15)',
+      bgActive: 'rgba(168, 85, 247, 0.3)',
+    },
+    team5: {
+      primary: '#f59e0b',    // Amber
+      light: '#fbbf24',
+      dark: '#d97706',
+      bg: 'rgba(245, 158, 11, 0.15)',
+      bgActive: 'rgba(245, 158, 11, 0.3)',
+    },
+    team6: {
+      primary: '#06b6d4',    // Cyan
+      light: '#22d3ee',
+      dark: '#0891b2',
+      bg: 'rgba(6, 182, 212, 0.15)',
+      bgActive: 'rgba(6, 182, 212, 0.3)',
+    },
+    team7: {
+      primary: '#ec4899',    // Pink
+      light: '#f472b6',
+      dark: '#db2777',
+      bg: 'rgba(236, 72, 153, 0.15)',
+      bgActive: 'rgba(236, 72, 153, 0.3)',
+    },
+    team8: {
+      primary: '#84cc16',    // Lime
+      light: '#a3e635',
+      dark: '#65a30d',
+      bg: 'rgba(132, 204, 22, 0.15)',
+      bgActive: 'rgba(132, 204, 22, 0.3)',
+    },
+    team9: {
+      primary: '#f97316',    // Orange
+      light: '#fb923c',
+      dark: '#ea580c',
+      bg: 'rgba(249, 115, 22, 0.15)',
+      bgActive: 'rgba(249, 115, 22, 0.3)',
+    },
   },
 
   // State Colors
@@ -89,3 +138,26 @@ export const colors = {
 } as const;
 
 export type Colors = typeof colors;
+
+export type TeamColorSet = {
+  readonly primary: string;
+  readonly light: string;
+  readonly dark: string;
+  readonly bg: string;
+  readonly bgActive: string;
+};
+
+const teamColorKeys = [
+  'team1', 'team2', 'team3', 'team4', 'team5',
+  'team6', 'team7', 'team8', 'team9',
+] as const;
+
+/** Get team colors by 0-indexed team ID. Falls back to gold/neutral for out-of-range IDs. */
+export function getTeamColors(teamId: number): TeamColorSet {
+  const key = teamColorKeys[teamId];
+  if (key && key in colors.teams) {
+    return colors.teams[key as keyof typeof colors.teams];
+  }
+  // Fallback for unexpected team IDs
+  return colors.teams.team1;
+}

@@ -105,28 +105,30 @@ export function canRobAce(
 
 /**
  * Find all players who can rob the Ace, in play order starting from the player after dealer.
- * @param hands - Array of player hands (index 0-3)
+ * @param hands - Array of player hands
  * @param trumpCard - The turned-up trump card
  * @param dealer - Dealer's player index
  * @param options - Rule options
+ * @param playerCount - Number of players (default 4)
  * @returns Array of player indices who can rob, in order of priority
  */
 export function findPlayersWhoCanRob(
   hands: Card[][],
   trumpCard: Card,
   dealer: number,
-  options: RuleOptions = {}
+  options: RuleOptions = {},
+  playerCount: number = 4
 ): number[] {
   const canRobList: number[] = [];
-  
+
   // If trump card is an Ace, only the dealer can take it (and must)
   if (isTrumpCardAce(trumpCard)) {
     return [dealer]; // Dealer must take the Ace
   }
 
   // Check each player starting from player after dealer
-  for (let i = 1; i <= 4; i++) {
-    const playerIndex = (dealer + i) % 4;
+  for (let i = 1; i < playerCount; i++) {
+    const playerIndex = (dealer + i) % playerCount;
     if (canRobAce(hands[playerIndex], trumpCard, options)) {
       canRobList.push(playerIndex);
     }

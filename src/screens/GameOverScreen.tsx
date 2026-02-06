@@ -18,6 +18,7 @@ import Confetti from "../components/Confetti";
 import Sparkle from "../components/Sparkle";
 import { playVictoryFanfare, playDefeatSound } from "../utils/sounds";
 import { colors, shadows, borderRadius } from "../theme";
+import { getTeamColors } from "../theme/colors";
 import type { RootStackParamList } from "./HomeScreen";
 
 type GameOverNavProp = NativeStackNavigationProp<
@@ -27,20 +28,29 @@ type GameOverNavProp = NativeStackNavigationProp<
 
 export default function GameOverScreen() {
   const navigation = useNavigation<GameOverNavProp>();
-  const { scores, handsWon, resetGame } = useGameStore();
+  const { handsWon, resetGame, players, humanPlayerIndex, teamAssignment } = useGameStore();
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
   const hasPlayedSound = useRef(false);
 
-  const winner = handsWon.team1 >= 5 ? 1 : handsWon.team2 >= 5 ? 2 : null;
-  const youWon = winner === 1;
+  const { teamCount } = teamAssignment;
+  const humanTeamId = players[humanPlayerIndex]?.teamId ?? 0;
+
+  // Find the winning team (first to 5 hands)
+  let winnerTeamId: number | null = null;
+  for (let t = 0; t < teamCount; t++) {
+    if ((handsWon[t] ?? 0) >= 5) {
+      winnerTeamId = t;
+      break;
+    }
+  }
+  const youWon = winnerTeamId === humanTeamId;
 
   // Play game end sound once
   useEffect(() => {
     if (!hasPlayedSound.current) {
       hasPlayedSound.current = true;
       if (youWon) {
-        // Delay victory fanfare to sync with animations
         setTimeout(() => playVictoryFanfare(), 600);
       } else {
         setTimeout(() => playDefeatSound(), 500);
@@ -59,7 +69,6 @@ export default function GameOverScreen() {
   const glowOpacity = useSharedValue(0);
 
   useEffect(() => {
-    // Card entrance
     cardScale.value = withDelay(
       200,
       withSpring(1, { damping: 12, stiffness: 150 })
@@ -69,7 +78,6 @@ export default function GameOverScreen() {
       withSpring(0, { damping: 15, stiffness: 150 })
     );
 
-    // Trophy bounce
     trophyScale.value = withDelay(
       500,
       withSequence(
@@ -78,7 +86,6 @@ export default function GameOverScreen() {
       )
     );
 
-    // Trophy wiggle for victory
     if (youWon) {
       trophyRotate.value = withDelay(
         900,
@@ -92,19 +99,13 @@ export default function GameOverScreen() {
       );
     }
 
-    // Title fade
     titleOpacity.value = withDelay(700, withTiming(1, { duration: 300 }));
-
-    // Score scale
     scoreScale.value = withDelay(
       900,
       withSpring(1, { damping: 10, stiffness: 200 })
     );
-
-    // Buttons fade
     buttonsOpacity.value = withDelay(1200, withTiming(1, { duration: 400 }));
 
-    // Victory effects
     if (youWon) {
       glowOpacity.value = withDelay(
         600,
@@ -162,10 +163,18 @@ export default function GameOverScreen() {
     navigation.navigate("Home");
   };
 
+  const winnerBorderColor = youWon
+    ? colors.gold.primary
+    : winnerTeamId !== null
+    ? getTeamColors(winnerTeamId).primary
+    : colors.teams.team2.primary;
+
+  const teamIds = Array.from({ length: teamCount }, (_, i) => i);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
-      
+
       {/* Victory glow effect */}
       {youWon && (
         <Animated.View
@@ -177,10 +186,10 @@ export default function GameOverScreen() {
           pointerEvents="none"
         />
       )}
-      
+
       {/* Confetti for victory */}
       {youWon && <Confetti visible={showConfetti} intensity="medium" duration={2500} />}
-      
+
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary, colors.background.primary]}
         style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}
@@ -195,7 +204,7 @@ export default function GameOverScreen() {
               alignItems: "center",
               ...shadows.extruded.large,
               borderWidth: 3,
-              borderColor: youWon ? colors.gold.primary : colors.teams.team2.primary,
+              borderColor: winnerBorderColor,
               marginBottom: 32,
               width: "100%",
               maxWidth: 320,
@@ -221,7 +230,7 @@ export default function GameOverScreen() {
               {youWon ? "🏆" : "😔"}
             </Animated.Text>
           </View>
-          
+
           <Animated.View style={titleStyle}>
             <Text
               style={{
@@ -235,7 +244,7 @@ export default function GameOverScreen() {
             >
               {youWon ? "VICTORY!" : "Defeat"}
             </Text>
-            
+
             <Text
               style={{
                 fontSize: 16,
@@ -248,12 +257,14 @@ export default function GameOverScreen() {
             </Text>
           </Animated.View>
 
-          {/* Score display */}
+          {/* Score display - dynamic teams */}
           <Animated.View
             style={[
               {
                 flexDirection: "row",
+                flexWrap: "wrap",
                 alignItems: "center",
+                justifyContent: "center",
                 backgroundColor: colors.background.primary,
                 borderRadius: borderRadius.lg,
                 padding: 16,
@@ -262,59 +273,44 @@ export default function GameOverScreen() {
               scoreStyle,
             ]}
           >
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={{ color: colors.teams.team1.light, fontSize: 12, marginBottom: 4 }}>
-                Your Team
-              </Text>
-              {/* Hands indicators */}
-              <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t1-${i}`}
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 7,
-                      backgroundColor: i < handsWon.team1 ? colors.teams.team1.primary : "transparent",
-                      borderWidth: 2,
-                      borderColor: colors.teams.team1.primary,
-                    }}
-                  />
-                ))}
-              </View>
-              <Text style={{ color: colors.text.muted, fontSize: 11 }}>
-                {handsWon.team1} hands
-              </Text>
-            </View>
-            
-            <Text style={{ color: colors.text.muted, fontSize: 20, fontWeight: "bold", marginHorizontal: 12 }}>
-              vs
-            </Text>
-            
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={{ color: colors.teams.team2.light, fontSize: 12, marginBottom: 4 }}>
-                Opponents
-              </Text>
-              {/* Hands indicators */}
-              <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t2-${i}`}
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 7,
-                      backgroundColor: i < handsWon.team2 ? colors.teams.team2.primary : "transparent",
-                      borderWidth: 2,
-                      borderColor: colors.teams.team2.primary,
-                    }}
-                  />
-                ))}
-              </View>
-              <Text style={{ color: colors.text.muted, fontSize: 11 }}>
-                {handsWon.team2} hands
-              </Text>
-            </View>
+            {teamIds.map((teamId, i) => {
+              const tc = getTeamColors(teamId);
+              const isHumanTeam = teamId === humanTeamId;
+              const label = isHumanTeam ? "Your Team" : `Team ${teamId + 1}`;
+              const hw = handsWon[teamId] ?? 0;
+              return (
+                <View key={teamId} style={{ flexDirection: "row", alignItems: "center" }}>
+                  {i > 0 && (
+                    <Text style={{ color: colors.text.muted, fontSize: 20, fontWeight: "bold", marginHorizontal: 8 }}>
+                      vs
+                    </Text>
+                  )}
+                  <View style={{ flex: 1, alignItems: "center", minWidth: 80 }}>
+                    <Text style={{ color: tc.light, fontSize: 12, marginBottom: 4 }}>
+                      {label}
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
+                      {Array.from({ length: 5 }).map((_, j) => (
+                        <View
+                          key={`t${teamId}-${j}`}
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: 7,
+                            backgroundColor: j < hw ? tc.primary : "transparent",
+                            borderWidth: 2,
+                            borderColor: tc.primary,
+                          }}
+                        />
+                      ))}
+                    </View>
+                    <Text style={{ color: colors.text.muted, fontSize: 11 }}>
+                      {hw} hands
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
           </Animated.View>
         </Animated.View>
 
