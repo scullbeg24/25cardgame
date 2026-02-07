@@ -16,7 +16,7 @@ import { colors, borderRadius, shadows } from "../theme";
 
 interface ComebackWinBadgeProps {
   visible: boolean;
-  teamIndex: 0 | 1;
+  teamIndex: number;
   isYourTeam: boolean;
   onHide?: () => void;
 }

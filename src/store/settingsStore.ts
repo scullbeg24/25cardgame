@@ -17,6 +17,9 @@ export interface RuleVariations {
   pointsToWinHand?: number;
 }
 
+export type { TeamMode } from "../game-logic/types";
+import type { TeamMode } from "../game-logic/types";
+
 export interface SettingsState {
   soundEnabled: boolean;
   animationSpeed: AnimationSpeed;
@@ -25,6 +28,8 @@ export interface SettingsState {
   allowUndo: boolean;
   aiDifficulty: AIDifficulty;
   ruleVariations: RuleVariations;
+  playerCount: number;
+  teamMode: TeamMode;
 }
 
 const defaultSettings: SettingsState = {
@@ -35,6 +40,8 @@ const defaultSettings: SettingsState = {
   allowUndo: false,
   aiDifficulty: "medium",
   ruleVariations: {},
+  playerCount: 4,
+  teamMode: "two-teams",
 };
 
 interface SettingsStore extends SettingsState {
@@ -45,6 +52,8 @@ interface SettingsStore extends SettingsState {
   setAllowUndo: (v: boolean) => void;
   setAIDifficulty: (v: AIDifficulty) => void;
   setRuleVariations: (v: Partial<RuleVariations>) => void;
+  setPlayerCount: (v: number) => void;
+  setTeamMode: (v: TeamMode) => void;
   load: () => Promise<void>;
   save: () => Promise<void>;
 }
@@ -60,6 +69,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setAIDifficulty: (v) => set({ aiDifficulty: v }),
   setRuleVariations: (v) =>
     set((s) => ({ ruleVariations: { ...s.ruleVariations, ...v } })),
+  setPlayerCount: (v) => set({ playerCount: Math.max(2, Math.min(9, v)) }),
+  setTeamMode: (v) => set({ teamMode: v }),
 
   load: async () => {
     try {
@@ -84,6 +95,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         allowUndo: state.allowUndo,
         aiDifficulty: state.aiDifficulty,
         ruleVariations: state.ruleVariations,
+        playerCount: state.playerCount,
+        teamMode: state.teamMode,
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
     } catch {

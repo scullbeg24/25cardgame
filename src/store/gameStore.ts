@@ -25,6 +25,9 @@ import {
   POINTS_PER_TRICK,
 } from "../game-logic/scoring";
 import type { AIDifficulty } from "../utils/constants";
+import { AI_NAMES } from "../utils/constants";
+import type { TeamScores, TeamHandsWon, TeamAssignment, GameConfig } from "../game-logic/types";
+import { createTeamAssignment, createInitialScores, createInitialHandsWon } from "../game-logic/types";
 
 export type GamePhase =
   | "setup"
@@ -39,7 +42,7 @@ export interface Player {
   id: number;
   name: string;
   hand: Card[];
-  teamId: 1 | 2;
+  teamId: number;
   isAI: boolean;
   difficulty?: AIDifficulty;
 }
@@ -51,6 +54,9 @@ export interface TrickCard {
 
 export interface GameState {
   players: Player[];
+  playerCount: number;
+  teamAssignment: TeamAssignment;
+  humanPlayerIndex: number;
   trumpSuit: Suit;
   trumpCard: Card | null;
   currentTrick: TrickCard[];
@@ -58,8 +64,8 @@ export interface GameState {
   currentPlayer: number;
   dealer: number;
   firstPlayerThisTrick: number;
-  scores: { team1: number; team2: number };
-  handsWon: { team1: number; team2: number };
+  scores: TeamScores;
+  handsWon: TeamHandsWon;
   pack: Card[];
   gamePhase: GamePhase;
   validMoves: Card[];
@@ -73,29 +79,18 @@ export interface GameState {
   trumpCardIsAce: boolean;
 }
 
-const initialScores = () => ({ team1: 0, team2: 0 });
-const initialHandsWon = () => ({ team1: 0, team2: 0 });
-
-const createPlayer = (
-  id: number,
-  name: string,
-  hand: Card[],
-  isAI: boolean,
-  difficulty?: AIDifficulty
-): Player => ({
-  id,
-  name,
-  hand,
-  teamId: (id % 2 === 0 ? 1 : 2) as 1 | 2,
-  isAI,
-  difficulty,
-});
+const defaultTeamAssignment: TeamAssignment = {
+  teamMode: "two-teams",
+  playerTeams: [0, 1, 0, 1],
+  teamCount: 2,
+};
 
 interface GameStore extends GameState {
   initializeGame: (
     playerName: string,
     aiDifficulty: AIDifficulty,
-    ruleOptions?: RuleOptions
+    ruleOptions?: RuleOptions,
+    gameConfig?: GameConfig
   ) => void;
   dealNewHand: () => void;
   offerRobPack: () => void;
@@ -116,6 +111,9 @@ interface GameStore extends GameState {
 
 const initialState: GameState = {
   players: [],
+  playerCount: 4,
+  teamAssignment: defaultTeamAssignment,
+  humanPlayerIndex: 0,
   trumpSuit: "hearts",
   trumpCard: null,
   currentTrick: [],
@@ -123,8 +121,8 @@ const initialState: GameState = {
   currentPlayer: 0,
   dealer: 0,
   firstPlayerThisTrick: 0,
-  scores: initialScores(),
-  handsWon: initialHandsWon(),
+  scores: createInitialScores(2),
+  handsWon: createInitialHandsWon(2),
   pack: [],
   gamePhase: "setup",
   validMoves: [],
@@ -138,27 +136,57 @@ const initialState: GameState = {
 export const useGameStore = create<GameStore>((set, get) => ({
   ...initialState,
 
-  initializeGame: (playerName, aiDifficulty, ruleOptions = {}) => {
+  initializeGame: (playerName, aiDifficulty, ruleOptions = {}, gameConfig) => {
     AsyncStorage.removeItem(GAME_STORAGE_KEY);
-    const names = ["North", "East", playerName, "West"];
-    const players: Player[] = names.map((name, i) =>
-      createPlayer(i, name, [], i !== 2, i !== 2 ? aiDifficulty : undefined)
-    );
-    const dealer = Math.floor(Math.random() * 4);
+
+    const playerCount = gameConfig?.playerCount ?? 4;
+    const teamMode = gameConfig?.teamMode ?? "two-teams";
+    const humanIdx = gameConfig?.humanPlayerIndex ?? 0;
+    const teamAssignment = createTeamAssignment(playerCount, teamMode);
+
+    // Build player list: human at humanIdx, AI everywhere else
+    const players: Player[] = [];
+    let aiNameIdx = 0;
+    for (let i = 0; i < playerCount; i++) {
+      if (i === humanIdx) {
+        players.push({
+          id: i,
+          name: playerName,
+          hand: [],
+          teamId: teamAssignment.playerTeams[i],
+          isAI: false,
+        });
+      } else {
+        players.push({
+          id: i,
+          name: AI_NAMES[aiNameIdx] ?? `AI ${aiNameIdx + 1}`,
+          hand: [],
+          teamId: teamAssignment.playerTeams[i],
+          isAI: true,
+          difficulty: aiDifficulty,
+        });
+        aiNameIdx++;
+      }
+    }
+
+    const dealer = Math.floor(Math.random() * playerCount);
     set({
       players,
+      playerCount,
+      teamAssignment,
+      humanPlayerIndex: humanIdx,
       dealer,
       gamePhase: "setup",
-      scores: initialScores(),
-      handsWon: initialHandsWon(),
+      scores: createInitialScores(teamAssignment.teamCount),
+      handsWon: createInitialHandsWon(teamAssignment.teamCount),
       ruleOptions,
     });
     get().dealNewHand();
   },
 
   dealNewHand: () => {
-    const { players, dealer, ruleOptions } = get();
-    const { hands, trumpCard, pack } = dealCards();
+    const { players, dealer, ruleOptions, playerCount } = get();
+    const { hands, trumpCard, pack } = dealCards(playerCount);
     const trumpSuit = getTrumpSuitFromCard(trumpCard);
 
     const updatedPlayers = players.map((p, i) => ({
@@ -166,14 +194,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hand: hands[i],
     }));
 
-    const firstPlayer = (dealer + 1) % 4;
-    
+    const firstPlayer = (dealer + 1) % playerCount;
+
     // Check if trump card is an Ace (dealer must take it)
     const trumpIsAce = isTrumpCardAce(trumpCard);
-    
+
     // Find all players who can rob the Ace
-    const eligibleRobbers = findPlayersWhoCanRob(hands, trumpCard, dealer, ruleOptions);
-    
+    const eligibleRobbers = findPlayersWhoCanRob(hands, trumpCard, dealer, ruleOptions, playerCount);
+
     // Determine if we enter robbing phase
     const hasEligibleRobbers = eligibleRobbers.length > 0;
     const firstRobber = hasEligibleRobbers ? eligibleRobbers[0] : -1;
@@ -309,7 +337,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     );
 
     const effectiveLedSuit = ledSuit ?? card.suit;
-    const nextPlayer = (playerId + 1) % 4;
+    const nextPlayer = (playerId + 1) % get().playerCount;
 
     set({
       players: updatedPlayers,
@@ -319,7 +347,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       validMoves: [],
     });
 
-    if (newTrick.length === 4) {
+    if (newTrick.length === get().playerCount) {
       set({ gamePhase: "trickComplete" });
     } else {
       get().calculateValidMoves(nextPlayer);
@@ -336,29 +364,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
       scores,
       players,
       pack,
+      playerCount,
+      teamAssignment,
     } = get();
 
-    if (!ledSuit || currentTrick.length !== 4) return;
+    if (!ledSuit || currentTrick.length !== playerCount) return;
 
     const trickCards = currentTrick.map((t) => t.card);
     const winner = getTrickWinner(
       trickCards,
       ledSuit,
       trumpSuit,
-      firstPlayerThisTrick
+      firstPlayerThisTrick,
+      playerCount
     );
-    const newScores = addTrickPoints(scores, winner, POINTS_PER_TRICK);
+    const newScores = addTrickPoints(scores, winner, teamAssignment.playerTeams, POINTS_PER_TRICK);
 
     const newHandsWon = { ...get().handsWon };
     const allCardsPlayed = players.every((p) => p.hand.length === 0);
-    const handWinner = checkHandWinner(newScores);
+    const handWinner = checkHandWinner(newScores, teamAssignment.teamCount);
 
     // Hand only ends when a team reaches 25. Otherwise deal more cards and continue.
     if (allCardsPlayed) {
-      if (handWinner) {
-        newHandsWon[`team${handWinner}` as keyof typeof newHandsWon] += 1;
+      if (handWinner !== null) {
+        newHandsWon[handWinner] = (newHandsWon[handWinner] ?? 0) + 1;
       } else {
-        const dealResult = dealFromPack(pack);
+        const dealResult = dealFromPack(pack, playerCount);
         if (dealResult) {
           const updatedPlayers = players.map((p, i) => ({
             ...p,
@@ -377,13 +408,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
           get().calculateValidMoves(winner);
           return;
         }
-        // Pack exhausted - team with more points wins (fallback)
-        if (newScores.team1 > newScores.team2) newHandsWon.team1 += 1;
-        else if (newScores.team2 > newScores.team1) newHandsWon.team2 += 1;
+        // Pack exhausted - team with most points wins (fallback)
+        let maxScore = -1;
+        let maxTeam = 0;
+        for (let t = 0; t < teamAssignment.teamCount; t++) {
+          if ((newScores[t] ?? 0) > maxScore) {
+            maxScore = newScores[t] ?? 0;
+            maxTeam = t;
+          }
+        }
+        newHandsWon[maxTeam] = (newHandsWon[maxTeam] ?? 0) + 1;
       }
     }
 
-    const gameWinner = checkGameWinner(newHandsWon);
+    const gameWinner = checkGameWinner(newHandsWon, teamAssignment.teamCount);
 
     set({
       currentTrick: [],
@@ -392,29 +430,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
       firstPlayerThisTrick: winner,
       scores: newScores,
       handsWon: newHandsWon,
-      gamePhase: gameWinner
+      gamePhase: gameWinner !== null
         ? "gameOver"
         : allCardsPlayed
         ? "handComplete"
         : "playing",
     });
 
-    if (gameWinner || allCardsPlayed) return;
+    if (gameWinner !== null || allCardsPlayed) return;
 
     get().calculateValidMoves(winner);
   },
 
   completeHand: () => {
-    const { handsWon } = get();
-    const gameWinner = checkGameWinner(handsWon);
-    if (gameWinner) {
+    const { handsWon, teamAssignment, playerCount } = get();
+    const gameWinner = checkGameWinner(handsWon, teamAssignment.teamCount);
+    if (gameWinner !== null) {
       set({ gamePhase: "gameOver" });
       AsyncStorage.removeItem(GAME_STORAGE_KEY);
       return;
     }
 
-    const newDealer = (get().dealer + 1) % 4;
-    set({ dealer: newDealer, scores: initialScores() });
+    const newDealer = (get().dealer + 1) % playerCount;
+    set({ dealer: newDealer, scores: createInitialScores(teamAssignment.teamCount) });
     get().dealNewHand();
   },
 

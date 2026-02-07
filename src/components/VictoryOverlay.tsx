@@ -1,5 +1,6 @@
 /**
- * Full-screen victory celebration overlay for when a team wins the game
+ * Full-screen victory celebration overlay for when someone wins the game
+ * Supports both team mode and individual mode.
  */
 
 import { useEffect, useState } from "react";
@@ -15,21 +16,35 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { colors, borderRadius, shadows } from "../theme";
+import { getTeamColors } from "../theme/colors";
 import Confetti from "./Confetti";
 import Sparkle from "./Sparkle";
+import type { TeamHandsWon } from "../game-logic/types";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface VictoryOverlayProps {
   visible: boolean;
   isVictory: boolean;
-  handsWon: { team1: number; team2: number };
+  /** "team" for team-based display, "individual" for leaderboard */
+  scoringMode?: "team" | "individual";
+  handsWon: TeamHandsWon;
+  /** Player names (for individual mode leaderboard) */
+  playerNames?: string[];
+  /** Human player index */
+  humanPlayerIndex?: number;
+  /** Number of teams (for team mode) */
+  teamCount?: number;
 }
 
 export default function VictoryOverlay({
   visible,
   isVictory,
+  scoringMode = "team",
   handsWon,
+  playerNames = [],
+  humanPlayerIndex = 0,
+  teamCount = 2,
 }: VictoryOverlayProps) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
@@ -145,9 +160,9 @@ export default function VictoryOverlay({
 
   const title = isVictory ? "VICTORY!" : "DEFEAT";
   const subtitle = isVictory
-    ? "Congratulations! You've won the game!"
+    ? (scoringMode === "team" ? "Congratulations! Your team wins the game!" : "Congratulations! You've won the game!")
     : "Better luck next time!";
-  const emoji = isVictory ? "🏆" : "😔";
+  const emoji = isVictory ? "\uD83C\uDFC6" : "\uD83D\uDE14";
   const accentColor = isVictory ? colors.gold.primary : colors.teams.team2.primary;
 
   return (
@@ -217,59 +232,124 @@ export default function VictoryOverlay({
         <Animated.View style={[styles.scoreCard, scoreStyle]}>
           <Text style={styles.scoreTitle}>Final Score</Text>
 
-          <View style={styles.scoreRow}>
-            <View style={styles.teamScore}>
-              <Text style={[styles.teamLabel, { color: colors.teams.team1.light }]}>
-                Your Team
-              </Text>
-              <View style={styles.handsRow}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t1-${i}`}
-                    style={[
-                      styles.handIndicator,
-                      {
-                        backgroundColor:
-                          i < handsWon.team1
-                            ? colors.teams.team1.primary
-                            : "transparent",
-                        borderColor: colors.teams.team1.primary,
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-              <Text style={styles.handsCount}>{handsWon.team1} hands</Text>
+          {scoringMode === "team" ? (
+            /* Team mode: dynamic N-team layout */
+            <View style={styles.scoreRow}>
+              {Array.from({ length: teamCount }).map((_, teamIdx) => {
+                const tc = getTeamColors(teamIdx);
+                const teamHands = handsWon[teamIdx] ?? 0;
+                const label = teamIdx === 0 ? "Your Team" : `Team ${teamIdx + 1}`;
+                return (
+                  <View key={teamIdx} style={[styles.teamScore, teamIdx > 0 && { marginLeft: 8 }]}>
+                    <Text style={[styles.teamLabel, { color: tc.light }]}>
+                      {label}
+                    </Text>
+                    <View style={styles.handsRow}>
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <View
+                          key={`t${teamIdx}-${i}`}
+                          style={[
+                            styles.handIndicator,
+                            {
+                              backgroundColor:
+                                i < teamHands
+                                  ? tc.primary
+                                  : "transparent",
+                              borderColor: tc.primary,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.handsCount}>{teamHands} hands</Text>
+                  </View>
+                );
+              })}
             </View>
-
-            <View style={styles.divider}>
-              <Text style={styles.dividerText}>vs</Text>
+          ) : (
+            /* Individual mode: leaderboard */
+            <View style={{ width: "100%" }}>
+              {playerNames
+                .map((name, idx) => ({
+                  name: idx === humanPlayerIndex ? "You" : name,
+                  hands: handsWon[idx] ?? 0,
+                  isYou: idx === humanPlayerIndex,
+                }))
+                .sort((a, b) => b.hands - a.hands)
+                .map((entry, i) => {
+                  const entryColor = entry.isYou ? colors.teams.team1 : colors.teams.team2;
+                  return (
+                    <View
+                      key={i}
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        paddingVertical: 6,
+                        paddingHorizontal: 12,
+                        backgroundColor: entry.isYou ? "rgba(59, 130, 246, 0.15)" : "transparent",
+                        borderRadius: 8,
+                        marginBottom: 2,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Text
+                          style={{
+                            color: colors.text.muted,
+                            fontSize: 12,
+                            fontWeight: "bold",
+                            width: 18,
+                          }}
+                        >
+                          #{i + 1}
+                        </Text>
+                        <Text
+                          style={{
+                            color: entry.isYou ? colors.teams.team1.light : colors.text.primary,
+                            fontSize: 14,
+                            fontWeight: entry.isYou ? "bold" : "600",
+                          }}
+                          numberOfLines={1}
+                        >
+                          {entry.name}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <View style={{ flexDirection: "row", gap: 3 }}>
+                          {Array.from({ length: 5 }).map((_, j) => (
+                            <View
+                              key={j}
+                              style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: 7,
+                                backgroundColor:
+                                  j < entry.hands
+                                    ? entryColor.primary
+                                    : "transparent",
+                                borderWidth: 2,
+                                borderColor: entryColor.primary,
+                              }}
+                            />
+                          ))}
+                        </View>
+                        <Text
+                          style={{
+                            color: colors.text.primary,
+                            fontSize: 13,
+                            fontWeight: "600",
+                            minWidth: 45,
+                            textAlign: "right",
+                          }}
+                        >
+                          {entry.hands} hand{entry.hands !== 1 ? "s" : ""}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
             </View>
-
-            <View style={styles.teamScore}>
-              <Text style={[styles.teamLabel, { color: colors.teams.team2.light }]}>
-                Opponents
-              </Text>
-              <View style={styles.handsRow}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t2-${i}`}
-                    style={[
-                      styles.handIndicator,
-                      {
-                        backgroundColor:
-                          i < handsWon.team2
-                            ? colors.teams.team2.primary
-                            : "transparent",
-                        borderColor: colors.teams.team2.primary,
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-              <Text style={styles.handsCount}>{handsWon.team2} hands</Text>
-            </View>
-          </View>
+          )}
         </Animated.View>
       </View>
     </View>
@@ -333,6 +413,7 @@ const styles = StyleSheet.create({
   scoreRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
   },
   teamScore: {
     flex: 1,

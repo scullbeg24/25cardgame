@@ -15,16 +15,17 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { colors, borderRadius, shadows } from "../theme";
+import type { TeamScores, TeamHandsWon } from "../game-logic/types";
 import Confetti from "./Confetti";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface HandWinOverlayProps {
   visible: boolean;
-  winningTeam: 1 | 2;
+  winningTeam: number; // 0-indexed team ID
   isYourTeam: boolean;
-  handsWon: { team1: number; team2: number };
-  finalScore: { team1: number; team2: number };
+  handsWon: TeamHandsWon;
+  finalScore: TeamScores;
   onComplete?: () => void;
 }
 
@@ -119,7 +120,7 @@ export default function HandWinOverlay({
 
   if (!visible) return null;
 
-  const teamColor = winningTeam === 1 ? colors.teams.team1 : colors.teams.team2;
+  const teamColor = winningTeam === 0 ? colors.teams.team1 : colors.teams.team2;
   const title = isYourTeam ? "Hand Won!" : "Hand Lost";
   const emoji = isYourTeam ? "🏆" : "😔";
   const subtitle = isYourTeam ? "Your team takes the hand!" : "Opponents win this hand";
@@ -173,14 +174,14 @@ export default function HandWinOverlay({
               <Text style={[styles.scoreLabel, { color: colors.teams.team1.light }]}>
                 Your Team
               </Text>
-              <Text style={styles.scoreValue}>{finalScore.team1}</Text>
+              <Text style={styles.scoreValue}>{finalScore[0] ?? 0}</Text>
             </View>
             <Text style={styles.vs}>vs</Text>
             <View style={styles.scoreBox}>
               <Text style={[styles.scoreLabel, { color: colors.teams.team2.light }]}>
                 Opponents
               </Text>
-              <Text style={styles.scoreValue}>{finalScore.team2}</Text>
+              <Text style={styles.scoreValue}>{finalScore[1] ?? 0}</Text>
             </View>
           </Animated.View>
 
@@ -197,7 +198,7 @@ export default function HandWinOverlay({
                       styles.handDot,
                       {
                         backgroundColor:
-                          i < handsWon.team1
+                          i < (handsWon[0] ?? 0)
                             ? colors.teams.team1.primary
                             : colors.background.primary,
                         borderColor: colors.teams.team1.primary,
@@ -216,7 +217,7 @@ export default function HandWinOverlay({
                       styles.handDot,
                       {
                         backgroundColor:
-                          i < handsWon.team2
+                          i < (handsWon[1] ?? 0)
                             ? colors.teams.team2.primary
                             : colors.background.primary,
                         borderColor: colors.teams.team2.primary,

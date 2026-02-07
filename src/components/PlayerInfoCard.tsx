@@ -8,6 +8,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useEffect } from "react";
 import { colors, borderRadius } from "../theme";
+import { getTeamColors } from "../theme/colors";
 
 interface PlayerInfoCardProps {
   name: string;
@@ -15,10 +16,12 @@ interface PlayerInfoCardProps {
   tricksWon: number;
   isCurrentPlayer: boolean;
   isYou?: boolean;
-  teamIndex: 0 | 1; // 0 = your team (blue), 1 = opponent (red)
+  /** Team index (0-indexed) for team coloring via getTeamColors() */
+  teamIndex: number;
   position: "top" | "left" | "right" | "bottom";
   isLeader?: boolean;
   isDealer?: boolean;
+  isRobber?: boolean;
 }
 
 export default function PlayerInfoCard({
@@ -29,6 +32,7 @@ export default function PlayerInfoCard({
   teamIndex,
   position,
   isDealer = false,
+  isRobber = false,
 }: PlayerInfoCardProps) {
   const glowOpacity = useSharedValue(0.6);
 
@@ -52,9 +56,9 @@ export default function PlayerInfoCard({
     opacity: isCurrentPlayer ? glowOpacity.value : 1,
   }));
 
-  const teamColor = teamIndex === 0 ? colors.teams.team1 : colors.teams.team2;
+  const teamColor = getTeamColors(teamIndex);
   const displayName = isYou ? "You" : name;
-  
+
   return (
     <Animated.View
       style={[
@@ -71,7 +75,7 @@ export default function PlayerInfoCard({
         badgeStyle,
       ]}
     >
-      {/* Score circle */}
+      {/* Score circle - shows current score */}
       <View
         style={{
           width: 24,
@@ -109,10 +113,25 @@ export default function PlayerInfoCard({
             paddingHorizontal: 4,
             paddingVertical: 1,
             borderRadius: 4,
-            marginLeft: 4,
+            marginLeft: 3,
           }}
         >
           <Text style={{ color: colors.text.primary, fontSize: 8, fontWeight: "bold" }}>D</Text>
+        </View>
+      )}
+
+      {/* Rob badge - shows when this player robbed the trump card this hand */}
+      {isRobber && (
+        <View
+          style={{
+            backgroundColor: "#7c3aed",
+            paddingHorizontal: 4,
+            paddingVertical: 1,
+            borderRadius: 4,
+            marginLeft: 3,
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 8, fontWeight: "bold" }}>R</Text>
         </View>
       )}
     </Animated.View>

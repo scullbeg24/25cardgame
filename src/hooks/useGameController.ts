@@ -16,6 +16,8 @@ import {
 } from "../store/onlineGameStore";
 import type { Card, Suit } from "../game-logic/cards";
 import type { RuleOptions } from "../game-logic/rules";
+import type { TeamScores, TeamHandsWon, TeamAssignment } from "../game-logic/types";
+import { createTeamAssignment, createInitialScores, createInitialHandsWon } from "../game-logic/types";
 
 export interface GameControllerState {
   // Players
@@ -34,10 +36,11 @@ export interface GameControllerState {
   validMoves: Card[];
   ruleOptions: RuleOptions;
 
-  // Scoring — team-based for local, individual for online
-  scores: { team1: number; team2: number };
-  handsWon: { team1: number; team2: number };
-  individualScores: number[];
+  // Scoring — flexible team-based (TeamScores keyed by team ID)
+  scores: TeamScores;
+  handsWon: TeamHandsWon;
+  teamAssignment: TeamAssignment;
+  individualScores: number[]; // For online mode backward compat
 
   // Robbing
   robberIndex: number;
@@ -100,21 +103,21 @@ export function useGameController(
           id: i,
           name: gs?.playerNames[i] ?? `Player ${i + 1}`,
           hand: gs?.hands[i] ?? [],
-          teamId: (i % 2 === 0 ? 1 : 2) as 1 | 2,
-          isAI: false, // No AI in online mode
+          teamId: i, // FFA in online mode — each player is their own team
+          isAI: false,
         });
       }
 
-      // Convert individual scores to team scores (for UI compat)
+      // Online uses individual scores — convert to TeamScores (FFA: each player = own team)
       const individualScores = gs?.scores ?? [];
-      const team1Score = individualScores.reduce(
-        (sum, s, i) => (i % 2 === 0 ? sum + s : sum),
-        0
-      );
-      const team2Score = individualScores.reduce(
-        (sum, s, i) => (i % 2 !== 0 ? sum + s : sum),
-        0
-      );
+      const scores: TeamScores = {};
+      for (let i = 0; i < numPlayers; i++) {
+        scores[i] = individualScores[i] ?? 0;
+      }
+
+      // Build FFA team assignment for online mode
+      const teamAssignment = createTeamAssignment(numPlayers, "ffa");
+      const handsWon = createInitialHandsWon(numPlayers); // Not tracked in online individual mode
 
       return {
         players,
@@ -131,8 +134,9 @@ export function useGameController(
         validMoves: onlineStore.validMoves,
         ruleOptions: gs?.ruleOptions ?? {},
 
-        scores: { team1: team1Score, team2: team2Score },
-        handsWon: { team1: 0, team2: 0 }, // Not tracked in individual mode
+        scores,
+        handsWon,
+        teamAssignment,
         individualScores,
 
         robberIndex: gs?.robberIndex ?? -1,
@@ -151,7 +155,6 @@ export function useGameController(
           if (onlineStore.isHost) {
             onlineStore.completeTrick();
           }
-          // Clients don't call completeTrick — host does it
         },
         completeHand: () => {
           if (onlineStore.isHost) {
@@ -170,8 +173,8 @@ export function useGameController(
     // ─── Local mode (existing gameStore) ────────────────────────
     return {
       players: localStore.players,
-      numPlayers: localStore.players.length || 4,
-      humanPlayerIndex: 2, // HUMAN_PLAYER_INDEX constant
+      numPlayers: localStore.playerCount,
+      humanPlayerIndex: localStore.humanPlayerIndex,
 
       trumpSuit: localStore.trumpSuit,
       trumpCard: localStore.trumpCard,
@@ -185,6 +188,7 @@ export function useGameController(
 
       scores: localStore.scores,
       handsWon: localStore.handsWon,
+      teamAssignment: localStore.teamAssignment,
       individualScores: [],
 
       robberIndex: localStore.robberIndex,
@@ -192,7 +196,9 @@ export function useGameController(
       robbed: localStore.robbed,
       trumpCardIsAce: localStore.trumpCardIsAce,
 
-      isMyTurn: localStore.currentPlayer === 2 && localStore.gamePhase === "playing",
+      isMyTurn:
+        localStore.currentPlayer === localStore.humanPlayerIndex &&
+        localStore.gamePhase === "playing",
       isOnline: false,
 
       playCard: localStore.playCard,

@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -89,6 +90,11 @@ export default function RegisterScreen() {
     try {
       setError('');
       await signUp(email.trim(), password, username.trim());
+      Alert.alert(
+        'Welcome! 🎉',
+        `Account created successfully! Welcome to 25, ${username.trim()}!`,
+        [{ text: 'Let\'s Play!', style: 'default' }]
+      );
       // Navigation will happen automatically via auth state listener
     } catch (err: any) {
       setError(err.message || 'Failed to create account');

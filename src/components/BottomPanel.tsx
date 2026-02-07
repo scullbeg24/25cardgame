@@ -11,21 +11,11 @@ const SUIT_SYMBOLS: Record<string, string> = {
   spades: "♠",
 };
 
-interface Player {
-  name: string;
-  score: number;
-  tricksWon: number;
-  teamIndex: 0 | 1;
-}
-
 interface BottomPanelProps {
-  // Scoreboard data
-  players: Player[];
-  
   // Trump data
   trumpCard: CardType | null;
   trumpSuit: Suit;
-  
+
   // Cards in hand
   cards: CardType[];
   validMoves: CardType[];
@@ -34,7 +24,6 @@ interface BottomPanelProps {
 }
 
 export default function BottomPanel({
-  players,
   trumpCard,
   trumpSuit,
   cards,
@@ -43,8 +32,8 @@ export default function BottomPanel({
   isYourTurn,
 }: BottomPanelProps) {
   const insets = useSafeAreaInsets();
-  const suitColor = trumpSuit === "hearts" || trumpSuit === "diamonds" 
-    ? colors.suits.hearts 
+  const suitColor = trumpSuit === "hearts" || trumpSuit === "diamonds"
+    ? colors.suits.hearts
     : colors.suits.spades;
   const suitSymbol = SUIT_SYMBOLS[trumpSuit] ?? "?";
 
@@ -53,10 +42,6 @@ export default function BottomPanel({
       (m) => m.suit === card.suit && m.rank === card.rank
     );
   };
-
-  // Get team scores
-  const team1Score = players.find(p => p.teamIndex === 0)?.score ?? 0;
-  const team2Score = players.find(p => p.teamIndex === 1)?.score ?? 0;
 
   return (
     <View
@@ -69,33 +54,8 @@ export default function BottomPanel({
         paddingHorizontal: 8,
       }}
     >
-      {/* Single row: Score | Cards | Trump */}
+      {/* Single row: Cards | Trump */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-        {/* Compact Score Display */}
-        <View
-          style={{
-            backgroundColor: colors.background.primary,
-            borderRadius: borderRadius.md,
-            padding: 6,
-            minWidth: 60,
-            borderWidth: 1,
-            borderColor: colors.softUI.border,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team1.primary }} />
-            <Text style={{ color: colors.teams.team1.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
-              {team1Score}
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team2.primary }} />
-            <Text style={{ color: colors.teams.team2.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
-              {team2Score}
-            </Text>
-          </View>
-        </View>
-
         {/* Cards In Hand - centered, overlapping */}
         <View
           style={{
@@ -143,31 +103,32 @@ export default function BottomPanel({
           )}
         </View>
 
-        {/* Compact Trump Display */}
+        {/* Trump Display - regular size */}
         <View
           style={{
             backgroundColor: colors.background.surface,
-            borderRadius: borderRadius.md,
-            padding: 4,
+            borderRadius: borderRadius.lg,
+            paddingVertical: 8,
+            paddingHorizontal: 12,
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 1,
             borderColor: colors.gold.dark,
-            minWidth: 50,
+            minWidth: 60,
           }}
         >
           <Text
             style={{
               color: colors.gold.primary,
-              fontSize: 8,
-              fontWeight: "600",
+              fontSize: 10,
+              fontWeight: "700",
               textTransform: "uppercase",
-              letterSpacing: 0.5,
+              letterSpacing: 1,
             }}
           >
             Trump
           </Text>
-          <Text style={{ color: suitColor, fontSize: 22, marginTop: -2 }}>{suitSymbol}</Text>
+          <Text style={{ color: suitColor, fontSize: 32, marginTop: 0 }}>{suitSymbol}</Text>
         </View>
       </View>
     </View>

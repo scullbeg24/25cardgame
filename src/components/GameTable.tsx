@@ -1,16 +1,16 @@
-import { View, Text, LayoutChangeEvent } from "react-native";
-import { useState } from "react";
+import { View, Text, type ViewStyle } from "react-native";
 import Card from "./Card";
 import PlayerInfoCard from "./PlayerInfoCard";
 import type { Card as CardType } from "../game-logic/cards";
 import type { TrickCard } from "../store/gameStore";
-import { colors, shadows } from "../theme";
+import { colors, shadows, borderRadius } from "../theme";
+import { getTeamColors } from "../theme/colors";
 
 interface PlayerData {
   name: string;
   score: number;
   tricksWon: number;
-  teamIndex?: 0 | 1;
+  teamIndex: number;
 }
 
 interface GameTableProps {
@@ -24,102 +24,14 @@ interface GameTableProps {
   dealer?: number;
   playerScores?: PlayerData[];
   playerCardCounts?: number[];
-  numPlayers?: number;
+  playerTeamIds?: number[];
+  humanPlayerIndex?: number;
 }
 
-const CARD_W = 70;
-const CARD_H = 98;
-
-const getTeamIndex = (playerIndex: number): 0 | 1 => {
-  return (playerIndex % 2 === 0 ? 0 : 1) as 0 | 1;
+// Get the played card for a specific player from the current trick
+const getPlayerCard = (currentTrick: TrickCard[], playerIndex: number): TrickCard | undefined => {
+  return currentTrick.find(tc => tc.playerIndex === playerIndex);
 };
-
-const getPlayerCard = (
-  currentTrick: TrickCard[],
-  playerIndex: number
-): TrickCard | undefined => {
-  return currentTrick.find((tc) => tc.playerIndex === playerIndex);
-};
-
-/**
- * Distribute N opponents across 3 sides: left, top, right.
- * Matching user's drawing: ~37.5% left, ~25% top, ~37.5% right.
- */
-function distributeSeats(numOpponents: number): {
-  left: number;
-  top: number;
-  right: number;
-} {
-  if (numOpponents <= 0) return { left: 0, top: 0, right: 0 };
-  if (numOpponents === 1) return { left: 0, top: 1, right: 0 };
-  if (numOpponents === 2) return { left: 1, top: 0, right: 1 };
-  if (numOpponents === 3) return { left: 1, top: 1, right: 1 };
-
-  const top = Math.max(1, Math.round(numOpponents * 0.25));
-  const sides = numOpponents - top;
-  const left = Math.ceil(sides / 2);
-  const right = Math.floor(sides / 2);
-  return { left, top, right };
-}
-
-interface SeatPosition {
-  x: number;
-  y: number;
-  side: "left" | "top" | "right";
-}
-
-/**
- * Compute absolute positions for all opponent seats given table dimensions.
- * Left/right seats are evenly spaced vertically.
- * Top seats are centered horizontally.
- */
-function computeSeatPositions(
-  dist: { left: number; top: number; right: number },
-  w: number,
-  h: number,
-  seatW: number,
-  seatH: number
-): SeatPosition[] {
-  const seats: SeatPosition[] = [];
-  const insetX = 6;
-  const insetY = 6;
-
-  // Left column: evenly spaced vertically
-  for (let i = 0; i < dist.left; i++) {
-    const step = h / (dist.left + 1);
-    seats.push({
-      x: insetX,
-      y: step * (i + 1) - seatH / 2,
-      side: "left",
-    });
-  }
-
-  // Top row: centered horizontally
-  if (dist.top > 0) {
-    const gap = 8;
-    const totalW = dist.top * seatW + (dist.top - 1) * gap;
-    const startX = (w - totalW) / 2;
-    for (let i = 0; i < dist.top; i++) {
-      seats.push({
-        x: startX + i * (seatW + gap),
-        y: insetY,
-        side: "top",
-      });
-    }
-  }
-
-  // Right column: evenly spaced vertically
-  for (let i = 0; i < dist.right; i++) {
-    const step = h / (dist.right + 1);
-    seats.push({
-      x: w - insetX - seatW,
-      y: step * (i + 1) - seatH / 2,
-      side: "right",
-    });
-  }
-
-  return seats;
-}
 
 export default function GameTable({
   currentTrick,
@@ -129,59 +41,187 @@ export default function GameTable({
   leadPlayer,
   dealer = 0,
   playerScores = [],
-  numPlayers = 4,
+  playerTeamIds = [],
+  humanPlayerIndex = 0,
 }: GameTableProps) {
-  const [tableSize, setTableSize] = useState<{
-    w: number;
-    h: number;
-  } | null>(null);
+  const playerCount = playerNames.length;
 
-  const humanIndex = numPlayers - 1;
-
-  // Badge scaling for high player counts; cards always render at native small size
-  let badgeScale: number;
-  if (numPlayers <= 4) {
-    badgeScale = 1.0;
-  } else if (numPlayers <= 6) {
-    badgeScale = 0.9;
-  } else if (numPlayers <= 8) {
-    badgeScale = 0.85;
-  } else {
-    badgeScale = 0.78;
-  }
-
-  // Seat unit: badge + card stacked vertically (card at native small size)
-  const badgeH = 30 * badgeScale;
-  const seatW = CARD_W + 4; // card width + small padding
-  const seatH = badgeH + 4 + CARD_H; // badge + gap + card
-
-  const handleLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (width > 0 && height > 0) {
-      setTableSize({ w: width, h: height });
+  // Build seat mapping: rotate so human is always at seat index 2 (South/bottom).
+  // Seats for 4 players: 0=North(top), 1=East(right), 2=South(bottom), 3=West(left)
+  // We map seat positions relative to the human player.
+  const getSeatOrder = (count: number, humanIdx: number): number[] => {
+    const seats: number[] = [];
+    for (let i = 0; i < count; i++) {
+      seats.push((humanIdx + i) % count);
     }
+    // seats[0] = human, seats[1] = next clockwise, etc.
+    // For 4 players we want: South=human, West=next, North=across, East=prev
+    // Remap: seat0(South)=seats[0], seat3(West)=seats[1], seat0(North)=seats[2], seat1(East)=seats[3]
+    return seats;
   };
 
-  // Build ordered list of opponent indices (clockwise from human's left)
-  const opponentIndices: number[] = [];
-  for (let i = 1; i < numPlayers; i++) {
-    opponentIndices.push((humanIndex + i) % numPlayers);
+  // For 4 players, keep the classic N/S/E/W layout
+  if (playerCount === 4) {
+    const order = getSeatOrder(4, humanPlayerIndex);
+    // order[0]=human(South), order[1]=left(West), order[2]=across(North), order[3]=right(East)
+    const southPlayer = order[0]; // human - bottom
+    const westPlayer = order[1];  // left
+    const northPlayer = order[2]; // top (across)
+    const eastPlayer = order[3];  // right
+
+    return (
+      <View style={{ flex: 1, margin: 8 }}>
+        <View
+          style={{
+            flex: 1,
+            borderRadius: 20,
+            padding: 4,
+            backgroundColor: colors.table.wood,
+            ...shadows.table,
+            borderWidth: 2,
+            borderColor: colors.gold.dark,
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              borderRadius: 16,
+              backgroundColor: colors.table.felt,
+              borderWidth: 2,
+              borderColor: colors.table.feltDark,
+            }}
+          >
+            {/* North player - top */}
+            <View style={{ alignItems: "center", paddingTop: 8 }}>
+              <PlayerBadge
+                playerIndex={northPlayer}
+                playerNames={playerNames}
+                playerScores={playerScores}
+                currentPlayer={currentPlayer}
+                dealer={dealer}
+                leadPlayer={leadPlayer}
+                playerTeamIds={playerTeamIds}
+                humanPlayerIndex={humanPlayerIndex}
+                seatPosition="top"
+              />
+              <PlayedCard
+                trick={currentTrick}
+                playerIndex={northPlayer}
+                playerNames={playerNames}
+                lastTrickWinner={lastTrickWinner}
+                playerTeamIds={playerTeamIds}
+                humanPlayerIndex={humanPlayerIndex}
+                style={{ marginTop: 8 }}
+              />
+            </View>
+
+            {/* Middle row: West - Center - East */}
+            <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+              <View style={{ alignItems: "center", paddingLeft: 8, width: 100 }}>
+                <PlayerBadge
+                  playerIndex={westPlayer}
+                  playerNames={playerNames}
+                  playerScores={playerScores}
+                  currentPlayer={currentPlayer}
+                  dealer={dealer}
+                  leadPlayer={leadPlayer}
+                  playerTeamIds={playerTeamIds}
+                  humanPlayerIndex={humanPlayerIndex}
+                  seatPosition="left"
+                />
+                <PlayedCard
+                  trick={currentTrick}
+                  playerIndex={westPlayer}
+                  playerNames={playerNames}
+                  lastTrickWinner={lastTrickWinner}
+                  playerTeamIds={playerTeamIds}
+                  humanPlayerIndex={humanPlayerIndex}
+                  style={{ marginTop: 6 }}
+                />
+              </View>
+
+              <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                {currentTrick.length === 0 && (
+                  <View
+                    style={{
+                      width: 50,
+                      height: 50,
+                      borderRadius: 25,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "rgba(0,0,0,0.1)",
+                      borderWidth: 1,
+                      borderColor: colors.gold.dark + "40",
+                      borderStyle: "dashed",
+                    }}
+                  >
+                    <Text style={{ color: colors.text.muted, fontSize: 9 }}>Play</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={{ alignItems: "center", paddingRight: 8, width: 100 }}>
+                <PlayerBadge
+                  playerIndex={eastPlayer}
+                  playerNames={playerNames}
+                  playerScores={playerScores}
+                  currentPlayer={currentPlayer}
+                  dealer={dealer}
+                  leadPlayer={leadPlayer}
+                  playerTeamIds={playerTeamIds}
+                  humanPlayerIndex={humanPlayerIndex}
+                  seatPosition="right"
+                />
+                <PlayedCard
+                  trick={currentTrick}
+                  playerIndex={eastPlayer}
+                  playerNames={playerNames}
+                  lastTrickWinner={lastTrickWinner}
+                  playerTeamIds={playerTeamIds}
+                  humanPlayerIndex={humanPlayerIndex}
+                  style={{ marginTop: 6 }}
+                />
+              </View>
+            </View>
+
+            {/* South player (You) - bottom */}
+            <View style={{ alignItems: "center", paddingBottom: 8 }}>
+              <PlayedCard
+                trick={currentTrick}
+                playerIndex={southPlayer}
+                playerNames={playerNames}
+                lastTrickWinner={lastTrickWinner}
+                playerTeamIds={playerTeamIds}
+                humanPlayerIndex={humanPlayerIndex}
+                style={{ marginBottom: 8 }}
+              />
+              <PlayerBadge
+                playerIndex={southPlayer}
+                playerNames={playerNames}
+                playerScores={playerScores}
+                currentPlayer={currentPlayer}
+                dealer={dealer}
+                leadPlayer={leadPlayer}
+                playerTeamIds={playerTeamIds}
+                humanPlayerIndex={humanPlayerIndex}
+                isYou
+                seatPosition="bottom"
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    );
   }
 
-  const numOpponents = opponentIndices.length;
-  const dist = distributeSeats(numOpponents);
-
-  // Map opponent indices to sides: first `left` go left, next `top` go top, last `right` go right
-  const leftOpponents = opponentIndices.slice(0, dist.left);
-  const topOpponents = opponentIndices.slice(
-    dist.left,
-    dist.left + dist.top
+  // For other player counts: grid layout
+  // Top row: opponents, Bottom: human player's card, Center: played cards
+  const otherPlayers = Array.from({ length: playerCount }, (_, i) => i).filter(
+    (i) => i !== humanPlayerIndex
   );
-  const rightOpponents = opponentIndices.slice(dist.left + dist.top);
 
   return (
     <View style={{ flex: 1, margin: 8 }}>
-      {/* Table outer edge — wood with gold accent */}
       <View
         style={{
           flex: 1,
@@ -193,7 +233,6 @@ export default function GameTable({
           borderColor: colors.gold.dark,
         }}
       >
-        {/* Table felt surface */}
         <View
           style={{
             flex: 1,
@@ -201,171 +240,216 @@ export default function GameTable({
             backgroundColor: colors.table.felt,
             borderWidth: 2,
             borderColor: colors.table.feltDark,
-            overflow: "hidden",
+            padding: 8,
           }}
-          onLayout={handleLayout}
         >
-          {tableSize &&
-            (() => {
-              const { w, h } = tableSize;
-              const seats = computeSeatPositions(dist, w, h, seatW, seatH);
+          {/* Top area: other players in a wrapping row */}
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              gap: 6,
+              paddingBottom: 4,
+            }}
+          >
+            {otherPlayers.map((idx) => (
+              <View key={idx} style={{ alignItems: "center" }}>
+                <PlayerBadge
+                  playerIndex={idx}
+                  playerNames={playerNames}
+                  playerScores={playerScores}
+                  currentPlayer={currentPlayer}
+                  dealer={dealer}
+                  leadPlayer={leadPlayer}
+                  playerTeamIds={playerTeamIds}
+                  humanPlayerIndex={humanPlayerIndex}
+                />
+              </View>
+            ))}
+          </View>
 
-              // Map seats back to ordered opponent list
-              // seats order: left(0..L-1), top(L..L+T-1), right(L+T..end)
-              const allOpponentsOrdered = [
-                ...leftOpponents,
-                ...topOpponents,
-                ...rightOpponents,
-              ];
+          {/* Center: played cards in a grid */}
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            {currentTrick.length === 0 ? (
+              <View
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "rgba(0,0,0,0.1)",
+                  borderWidth: 1,
+                  borderColor: colors.gold.dark + "40",
+                  borderStyle: "dashed",
+                }}
+              >
+                <Text style={{ color: colors.text.muted, fontSize: 9 }}>Play</Text>
+              </View>
+            ) : (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: 4,
+                }}
+              >
+                {currentTrick.map((tc) => (
+                  <PlayedCard
+                    key={tc.playerIndex}
+                    trick={currentTrick}
+                    playerIndex={tc.playerIndex}
+                    playerNames={playerNames}
+                    lastTrickWinner={lastTrickWinner}
+                    playerTeamIds={playerTeamIds}
+                    humanPlayerIndex={humanPlayerIndex}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
 
-              return (
-                <>
-                  {/* Opponent seats */}
-                  {allOpponentsOrdered.map((playerIdx, seatIdx) => {
-                    const seat = seats[seatIdx];
-                    if (!seat) return null;
-
-                    const teamIndex = getTeamIndex(playerIdx);
-                    const playedCard = getPlayerCard(currentTrick, playerIdx);
-                    const isWinner = lastTrickWinner === playerIdx;
-                    const teamColor =
-                      teamIndex === 0
-                        ? colors.teams.team1
-                        : colors.teams.team2;
-
-                    const playerData = playerScores[playerIdx] || {
-                      name:
-                        playerNames[playerIdx] || `Player ${playerIdx + 1}`,
-                      score: 0,
-                      tricksWon: 0,
-                    };
-
-                    return (
-                      <View
-                        key={playerIdx}
-                        style={{
-                          position: "absolute",
-                          left: seat.x,
-                          top: seat.y,
-                          width: seatW,
-                          alignItems: "center",
-                        }}
-                      >
-                        {/* Badge on top */}
-                        <View
-                          style={{
-                            transform: [{ scale: badgeScale }],
-                            zIndex: 10,
-                          }}
-                        >
-                          <PlayerInfoCard
-                            name={playerData.name}
-                            score={playerData.score}
-                            tricksWon={playerData.tricksWon}
-                            isCurrentPlayer={currentPlayer === playerIdx}
-                            isYou={false}
-                            teamIndex={teamIndex}
-                            position={
-                              seat.side === "left"
-                                ? "left"
-                                : seat.side === "right"
-                                  ? "right"
-                                  : "top"
-                            }
-                            isLeader={leadPlayer === playerIdx}
-                            isDealer={dealer === playerIdx}
-                          />
-                        </View>
-
-                        {/* Card below badge */}
-                        <View style={{ marginTop: 4, zIndex: isWinner ? 8 : 5 }}>
-                          {playedCard ? (
-                            <View
-                              style={{
-                                borderWidth: isWinner ? 2 : 0,
-                                borderColor: isWinner
-                                  ? colors.gold.primary
-                                  : "transparent",
-                                borderRadius: 8,
-                              }}
-                            >
-                              <Card
-                                card={playedCard.card}
-                                faceUp
-                                size="small"
-                              />
-                            </View>
-                          ) : (
-                            <View
-                              style={{
-                                width: CARD_W,
-                                height: CARD_H,
-                                borderRadius: 8,
-                                borderWidth: 1,
-                                borderColor: teamColor.primary + "25",
-                                borderStyle: "dashed",
-                                backgroundColor: "rgba(0,0,0,0.04)",
-                              }}
-                            />
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })}
-
-                  {/* Human's played card — centered at bottom */}
-                  {(() => {
-                    const humanCard = getPlayerCard(
-                      currentTrick,
-                      humanIndex
-                    );
-                    const isHumanWinner = lastTrickWinner === humanIndex;
-
-                    return (
-                      <View
-                        style={{
-                          position: "absolute",
-                          left: w / 2 - CARD_W / 2,
-                          bottom: 8,
-                          zIndex: isHumanWinner ? 8 : 5,
-                        }}
-                      >
-                        {humanCard ? (
-                          <View
-                            style={{
-                              borderWidth: isHumanWinner ? 2 : 0,
-                              borderColor: isHumanWinner
-                                ? colors.gold.primary
-                                : "transparent",
-                              borderRadius: 8,
-                            }}
-                          >
-                            <Card
-                              card={humanCard.card}
-                              faceUp
-                              size="small"
-                            />
-                          </View>
-                        ) : (
-                          <View
-                            style={{
-                              width: CARD_W,
-                              height: CARD_H,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: colors.gold.primary + "25",
-                              borderStyle: "dashed",
-                              backgroundColor: "rgba(0,0,0,0.04)",
-                            }}
-                          />
-                        )}
-                      </View>
-                    );
-                  })()}
-                </>
-              );
-            })()}
+          {/* Bottom: your badge */}
+          <View style={{ alignItems: "center", paddingTop: 4 }}>
+            <PlayerBadge
+              playerIndex={humanPlayerIndex}
+              playerNames={playerNames}
+              playerScores={playerScores}
+              currentPlayer={currentPlayer}
+              dealer={dealer}
+              leadPlayer={leadPlayer}
+              playerTeamIds={playerTeamIds}
+              humanPlayerIndex={humanPlayerIndex}
+              isYou
+            />
+          </View>
         </View>
+      </View>
+    </View>
+  );
+}
+
+// Helper component for player badge
+function PlayerBadge({
+  playerIndex,
+  playerNames,
+  playerScores,
+  currentPlayer,
+  dealer,
+  leadPlayer,
+  playerTeamIds,
+  humanPlayerIndex,
+  isYou = false,
+  seatPosition,
+}: {
+  playerIndex: number;
+  playerNames: string[];
+  playerScores: PlayerData[];
+  currentPlayer: number;
+  dealer: number;
+  leadPlayer: number;
+  playerTeamIds: number[];
+  humanPlayerIndex: number;
+  isYou?: boolean;
+  seatPosition?: "top" | "left" | "right" | "bottom";
+}) {
+  const isCurrent = currentPlayer === playerIndex;
+  const teamIndex = playerTeamIds[playerIndex] ?? 0;
+  const isDealer = dealer === playerIndex;
+
+  const playerData = playerScores[playerIndex] || {
+    name: playerNames[playerIndex] || `Player ${playerIndex + 1}`,
+    score: 0,
+    tricksWon: 0,
+  };
+
+  // Use explicit seat position if provided, otherwise infer from isYou
+  const position = seatPosition ?? (isYou ? "bottom" : "top");
+
+  return (
+    <PlayerInfoCard
+      name={playerData.name}
+      score={playerData.score}
+      tricksWon={playerData.tricksWon}
+      isCurrentPlayer={isCurrent}
+      isYou={isYou}
+      teamIndex={teamIndex}
+      position={position}
+      isLeader={leadPlayer === playerIndex}
+      isDealer={isDealer}
+    />
+  );
+}
+
+// Helper component for played card
+function PlayedCard({
+  trick,
+  playerIndex,
+  playerNames,
+  lastTrickWinner,
+  playerTeamIds,
+  humanPlayerIndex,
+  style,
+}: {
+  trick: TrickCard[];
+  playerIndex: number;
+  playerNames: string[];
+  lastTrickWinner?: number | null;
+  playerTeamIds: number[];
+  humanPlayerIndex: number;
+  style?: ViewStyle;
+}) {
+  const playedCard = getPlayerCard(trick, playerIndex);
+
+  if (!playedCard) {
+    // Empty placeholder to maintain layout
+    return <View style={[{ width: 70, height: 98 }, style]} />;
+  }
+
+  const teamIndex = playerTeamIds[playerIndex] ?? 0;
+  const teamColor = getTeamColors(teamIndex);
+  const isWinner = lastTrickWinner === playerIndex;
+
+  return (
+    <View style={[{ alignItems: "center" }, style]}>
+      <View style={{ transform: [{ scale: isWinner ? 1.05 : 1 }] }}>
+        <Card card={playedCard.card} faceUp size="small" />
+      </View>
+      {/* Small label showing who played */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          marginTop: 2,
+          paddingHorizontal: 5,
+          paddingVertical: 1,
+          borderRadius: 6,
+          backgroundColor: teamColor.bg,
+        }}
+      >
+        <View
+          style={{
+            width: 4,
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: teamColor.primary,
+            marginRight: 3,
+          }}
+        />
+        <Text style={{ color: teamColor.light, fontSize: 8 }}>
+          {playerIndex === humanPlayerIndex ? "You" : playerNames[playerIndex]}
+        </Text>
+        {isWinner && (
+          <Text style={{ color: colors.gold.primary, fontSize: 8, marginLeft: 2 }}>★</Text>
+        )}
       </View>
     </View>
   );

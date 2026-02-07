@@ -21,6 +21,7 @@ import Confetti from "../components/Confetti";
 import Sparkle from "../components/Sparkle";
 import { playVictoryFanfare, playDefeatSound } from "../utils/sounds";
 import { colors, shadows, borderRadius } from "../theme";
+import { getTeamColors } from "../theme/colors";
 import type { RootStackParamList } from "./HomeScreen";
 
 type GameOverNavProp = NativeStackNavigationProp<
@@ -32,7 +33,7 @@ type GameOverRouteProp = RouteProp<RootStackParamList, "GameOver">;
 export default function GameOverScreen() {
   const navigation = useNavigation<GameOverNavProp>();
   const route = useRoute<GameOverRouteProp>();
-  const { scores, handsWon, resetGame } = useGameStore();
+  const { scores, handsWon, resetGame, teamAssignment } = useGameStore();
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
   const hasPlayedSound = useRef(false);
@@ -54,7 +55,7 @@ export default function GameOverScreen() {
   // Determine if "you" won
   const youWon = isOnline
     ? onlineWinnerIndex === humanPlayerIndex
-    : (handsWon.team1 >= 5 ? true : false);
+    : ((handsWon[0] ?? 0) >= 5);
 
   // Winner name for online
   const winnerName = isOnline
@@ -388,59 +389,43 @@ export default function GameOverScreen() {
             ) : (
               /* ─── Local: Team-based score display ─── */
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ color: colors.teams.team1.light, fontSize: 12, marginBottom: 4 }}>
-                    Your Team
-                  </Text>
-                  {/* Hands indicators */}
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <View
-                        key={`t1-${i}`}
-                        style={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: 7,
-                          backgroundColor: i < handsWon.team1 ? colors.teams.team1.primary : "transparent",
-                          borderWidth: 2,
-                          borderColor: colors.teams.team1.primary,
-                        }}
-                      />
-                    ))}
-                  </View>
-                  <Text style={{ color: colors.text.muted, fontSize: 11 }}>
-                    {handsWon.team1} hands
-                  </Text>
-                </View>
-
-                <Text style={{ color: colors.text.muted, fontSize: 20, fontWeight: "bold", marginHorizontal: 12 }}>
-                  vs
-                </Text>
-
-                <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ color: colors.teams.team2.light, fontSize: 12, marginBottom: 4 }}>
-                    Opponents
-                  </Text>
-                  {/* Hands indicators */}
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <View
-                        key={`t2-${i}`}
-                        style={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: 7,
-                          backgroundColor: i < handsWon.team2 ? colors.teams.team2.primary : "transparent",
-                          borderWidth: 2,
-                          borderColor: colors.teams.team2.primary,
-                        }}
-                      />
-                    ))}
-                  </View>
-                  <Text style={{ color: colors.text.muted, fontSize: 11 }}>
-                    {handsWon.team2} hands
-                  </Text>
-                </View>
+                {Array.from({ length: teamAssignment.teamCount }).map((_, teamId) => {
+                  const teamColors = getTeamColors(teamId);
+                  const won = handsWon[teamId] ?? 0;
+                  const label = teamId === 0 ? "Your Team" : teamAssignment.teamCount === 2 ? "Opponents" : `Team ${teamId + 1}`;
+                  return (
+                    <View key={`team-${teamId}`} style={{ flex: 1, alignItems: "center", flexDirection: "column" }}>
+                      {/* Separator between teams */}
+                      {teamId > 0 && (
+                        <Text style={{ color: colors.text.muted, fontSize: 20, fontWeight: "bold", position: "absolute", left: -12, top: "40%" }}>
+                          vs
+                        </Text>
+                      )}
+                      <Text style={{ color: teamColors.light, fontSize: 12, marginBottom: 4 }}>
+                        {label}
+                      </Text>
+                      {/* Hands indicators */}
+                      <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <View
+                            key={`t${teamId}-${i}`}
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: 7,
+                              backgroundColor: i < won ? teamColors.primary : "transparent",
+                              borderWidth: 2,
+                              borderColor: teamColors.primary,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <Text style={{ color: colors.text.muted, fontSize: 11 }}>
+                        {won} hands
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </Animated.View>

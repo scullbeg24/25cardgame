@@ -1,11 +1,14 @@
 /**
  * Scoring logic for Irish card game "25"
  * Trick winner, points calculation, game end conditions
+ *
+ * Supports both team-based (local) and individual (online) scoring.
  */
 
 import type { Card } from "./cards";
 import type { Suit } from "./cards";
 import { getWinningCardIndex } from "./cards";
+import type { TeamScores, TeamHandsWon } from "./types";
 
 export const POINTS_PER_TRICK = 5;
 export const POINTS_TO_WIN_HAND = 25;
@@ -18,17 +21,16 @@ export interface TrickWithPlayers {
 
 /**
  * Get the player index who won the trick.
- * @param numPlayers - Number of players in the game (default 4 for backward compat)
  */
 export function getTrickWinner(
   trick: Card[],
   ledSuit: Suit,
   trumpSuit: Suit,
   firstPlayerIndex: number,
-  numPlayers: number = 4
+  playerCount: number = 4
 ): number {
   const winningCardIdx = getWinningCardIndex(trick, ledSuit, trumpSuit);
-  return (firstPlayerIndex + winningCardIdx) % numPlayers;
+  return (firstPlayerIndex + winningCardIdx) % playerCount;
 }
 
 /**
@@ -39,50 +41,60 @@ export function calculateTrickPoints(_trick: Card[]): number {
 }
 
 /**
- * Get team for a player index. Team 1: 0,2 (North, South). Team 2: 1,3 (East, West).
+ * Get team for a player index using the team assignment array.
  */
-export function getTeamForPlayer(playerIndex: number): 1 | 2 {
-  return (playerIndex % 2 === 0 ? 1 : 2) as 1 | 2;
+export function getTeamForPlayer(
+  playerIndex: number,
+  playerTeams: number[]
+): number {
+  return playerTeams[playerIndex] ?? 0;
 }
 
 /**
  * Add trick points to team scores. Returns updated scores.
  */
 export function addTrickPoints(
-  scores: { team1: number; team2: number },
+  scores: TeamScores,
   winningPlayerIndex: number,
+  playerTeams: number[],
   points: number = POINTS_PER_TRICK
-): { team1: number; team2: number } {
-  const team = getTeamForPlayer(winningPlayerIndex);
+): TeamScores {
+  const teamId = getTeamForPlayer(winningPlayerIndex, playerTeams);
   return {
-    team1: scores.team1 + (team === 1 ? points : 0),
-    team2: scores.team2 + (team === 2 ? points : 0),
+    ...scores,
+    [teamId]: (scores[teamId] ?? 0) + points,
   };
 }
 
 /**
- * Check if a team has won the hand (reached 25 points)
+ * Check if a team has won the hand (reached 25 points).
+ * Returns the winning team ID or null.
  */
 export function checkHandWinner(
-  scores: { team1: number; team2: number }
-): 1 | 2 | null {
-  if (scores.team1 >= POINTS_TO_WIN_HAND) return 1;
-  if (scores.team2 >= POINTS_TO_WIN_HAND) return 2;
+  scores: TeamScores,
+  teamCount: number
+): number | null {
+  for (let t = 0; t < teamCount; t++) {
+    if ((scores[t] ?? 0) >= POINTS_TO_WIN_HAND) return t;
+  }
   return null;
 }
 
 /**
- * Check if a team has won the game (5 hands)
+ * Check if a team has won the game (5 hands).
+ * Returns the winning team ID or null.
  */
 export function checkGameWinner(
-  handsWon: { team1: number; team2: number }
-): 1 | 2 | null {
-  if (handsWon.team1 >= HANDS_TO_WIN_GAME) return 1;
-  if (handsWon.team2 >= HANDS_TO_WIN_GAME) return 2;
+  handsWon: TeamHandsWon,
+  teamCount: number
+): number | null {
+  for (let t = 0; t < teamCount; t++) {
+    if ((handsWon[t] ?? 0) >= HANDS_TO_WIN_GAME) return t;
+  }
   return null;
 }
 
-// ─── Individual Scoring (for multiplayer, no teams) ─────────────
+// ─── Individual Scoring (for online multiplayer, no teams) ─────────────
 
 /**
  * Add trick points to individual scores array.

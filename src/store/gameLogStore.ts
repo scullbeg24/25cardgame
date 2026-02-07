@@ -29,7 +29,7 @@ export interface GameLogEntry {
   card?: Card;
   trumpSuit?: Suit;
   points?: number;
-  teamId?: 1 | 2;
+  teamId?: number;
 }
 
 interface GameLogState {
@@ -47,8 +47,8 @@ interface GameLogStore extends GameLogState {
   logTrumpRevealed: (trumpCard: Card) => void;
   logCardPlayed: (playerName: string, card: Card) => void;
   logTrickWon: (playerName: string, points: number) => void;
-  logHandWon: (teamId: 1 | 2, score: number) => void;
-  logGameWon: (teamId: 1 | 2) => void;
+  logHandWon: (teamId: number, score: number) => void;
+  logGameWon: (teamId: number) => void;
   logRobOffered: (playerName: string, trumpCard: Card) => void;
   logRobAccepted: (playerName: string, trumpCard: Card) => void;
   logRobDeclined: (playerName: string) => void;
@@ -140,7 +140,7 @@ export const useGameLogStore = create<GameLogStore>((set, get) => ({
   },
 
   logHandWon: (teamId, score) => {
-    const teamName = teamId === 1 ? "Team 1 (You & North)" : "Team 2 (East & West)";
+    const teamName = `Team ${teamId + 1}`;
     get().addLog({
       type: "hand_won",
       message: `${teamName} wins the hand with ${score} points!`,
@@ -150,10 +150,10 @@ export const useGameLogStore = create<GameLogStore>((set, get) => ({
   },
 
   logGameWon: (teamId) => {
-    const teamName = teamId === 1 ? "Team 1 (You & North)" : "Team 2 (East & West)";
+    const teamName = `Team ${teamId + 1}`;
     get().addLog({
       type: "game_won",
-      message: `🏆 ${teamName} wins the game!`,
+      message: `${teamName} wins the game!`,
       teamId,
     });
   },
