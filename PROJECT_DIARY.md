@@ -254,6 +254,118 @@ This represents a complete, feature-rich mobile gaming application ready for bet
 
 ---
 
+## Entry 2: Variable Player Count & Online Multiplayer
+**Date**: February 6–7, 2026
+
+### Overview
+
+A major development day spanning three parallel worktrees (branches), delivering two large features: variable player count support (2–9 players) and a complete rewrite of online multiplayer using a host-authoritative architecture on Firebase Realtime Database.
+
+### Branch: `epic-mendel` — Auth & Firebase Migration
+
+Migrated the Firebase stack and fixed auth/multiplayer foundations:
+
+- **Firebase package upgrade**: `@react-native-firebase/*` from v20.5.0 → v23.8.6
+- **Removed Firestore dependency entirely** — the app now uses only Firebase Auth + Realtime Database (RTDB), eliminating Firestore costs and complexity
+- **Auth store rewrite** (`authStore.ts`): Fixed interface types, `photoURL` typing, streamlined profile management
+- **Presence service rewrite** (`presenceService.ts`): Simplified to pure RTDB-based presence using `onDisconnect()` handlers
+- **Firebase config** (`firebase.config.ts`): Rewritten for `@react-native-firebase/*` native modules (no JS SDK)
+- **Screen cleanup**: Updated all screens (Friends, Multiplayer, RoomLobby, Profile, Settings, Rules, Home, GameSetup) to remove Firestore imports and fix TypeScript errors
+- **Build fix**: Resolved Metro bundler issues, cleaned up duplicate `GoogleService-Info.plist` files
+- **Created `PROJECT_DIARY.md`** (this file) and `docs/build-issues.md` troubleshooting guide
+
+### Branch: `compassionate-bhaskara` — Variable Player Count (2–9 Players)
+
+Extended the game from fixed 2-team play to support 2–9 players with flexible team configurations:
+
+- **New `types.ts`**: Introduced `TeamScores`, `TeamHandsWon`, `TeamAssignment` types for dynamic team structures
+- **Game logic parameterization**:
+  - `deck.ts`: `dealCardsForN()` function handles 2–9 players with correct card distribution
+  - `scoring.ts`: Dynamic scoring for variable team counts
+  - `rules.ts`: Player count passed through rule evaluation
+  - `ai.ts`: AI adapted for multi-player/multi-team scenarios
+- **GameStore overhaul** (`gameStore.ts`): Manages dynamic player counts, team assignments, and flexible team modes
+- **GameSetupScreen redesign**: Player count stepper (2–9) and team mode selector (2 teams, 3 teams, FFA)
+- **GameTable layout** (`GameTable.tsx`): Seat rotation algorithm (human always at bottom), grid layout for 5+ players
+- **Dynamic team colors**: `getTeamColors()` utility for consistent theming across variable team counts
+- **Theme additions** (`colors.ts`): 72+ lines of new color definitions for multi-team support
+- **UI cleanup**: Removed redundant bottom panel scoreboard, enlarged trump indicator
+
+### Branch: `jolly-cartwright` — Online Multiplayer (Host-Authoritative)
+
+Complete rewrite of online multiplayer from a Firestore-based system to a host-authoritative model on Firebase Realtime Database:
+
+#### Architecture
+- **Host-authoritative model**: The room creator's device runs the game engine locally and publishes authoritative state to RTDB. Other clients are read-only subscribers that submit actions (card plays, robbing decisions) via a `/games/{roomId}/actions/{pushId}` queue
+- **RTDB paths**:
+  - `gameRooms/{roomId}` — room metadata, player list, status
+  - `games/{roomId}` — authoritative game state (published by host)
+  - `games/{roomId}/actions/{pushId}` — client action queue
+  - `publicRooms/{roomId}` — browsable public rooms
+  - `presence/{roomId}/{uid}` — per-room connection tracking
+
+#### New Files
+- **`onlineGameStore.ts`** (Zustand): Core multiplayer store handling host game engine execution, client state subscription, action dispatch, and state diffing/publishing. Includes `_markRoomFinished()` for room cleanup on game end
+- **`useGameController.ts`** (hook): Unified interface that abstracts local vs online game — screens call the same API regardless of mode
+- **`database.rules.json`**: Complete RTDB security rules for all paths (not yet deployed via CLI)
+
+#### Rewritten Screens
+- **`MultiplayerMenuScreen.tsx`**: Full rewrite (679 lines) — create rooms with privacy/player count settings, join by room code, browse public rooms with real-time updates, pull-to-refresh
+- **`RoomLobbyScreen.tsx`**: Full rewrite (694 lines) — player slots with ready system, host controls (start game, kick players), room code sharing, real-time player join/leave
+- **`GameOverScreen.tsx`**: Dual-mode support — team-based results for local games (with hands-won dots), individual leaderboard for online games (with 🥇🥈🥉 medals and "You" indicator)
+
+#### Modified Files
+- **`GameScreen.tsx`**: Detects `isOnline` via route params, uses `useGameController` hook, passes online data to GameOver navigation
+- **`roomStore.ts`**: Complete rewrite for RTDB — room CRUD, public room browsing, real-time subscriptions, player management
+- **`friendStore.ts`**: Stubbed out (Firestore removed), ready for RTDB reimplementation
+- **`presenceService.ts`**: Enhanced with per-room presence tracking via `onDisconnect()`
+- **`HomeScreen.tsx`**: Updated `RootStackParamList` with GameOver route params, displayName null safety
+- **`PlayerSlot.tsx`**: Updated for new `RoomPlayer` type from roomStore
+
+#### Build & Testing Setup
+- **iOS build fix**: Resolved `include of non-modular header inside framework module 'RNFBApp'` error by adding `"buildReactNativeFromSource": true` to `app.json` expo-build-properties (known issue with Expo SDK 54 + RNFB + static frameworks)
+- **Dual-simulator testing**: Set up iPhone 16e + iPhone 17 Pro running simultaneously for end-to-end multiplayer testing
+- **Firebase RTDB rules**: Set temporary open rules (`auth != null`) in Firebase Console for testing (CLI deployment pending)
+
+#### Bug Fixes During Testing
+- **`displayName.charAt(0)` null safety**: Fixed crash when `displayName` is undefined across 7 instances in 4 files (`HomeScreen`, `ProfileScreen`, `FriendsScreen`, `UserSearchBar`, `FriendListItem`) — all now use `(displayName || username || '?').charAt(0).toUpperCase()` pattern
+- **Firebase permission denied**: Resolved by setting temporary RTDB rules in Firebase Console
+- **TS2339 `targetScore` on `RuleOptions`**: Changed to read from `onlineGameStore.gameState?.targetScore`
+
+### Cross-Branch Summary
+
+| Branch | Focus | Files Changed | Lines +/- |
+|---|---|---|---|
+| `epic-mendel` | Auth & Firebase migration | 36 | +1,972 / -1,731 |
+| `compassionate-bhaskara` | Variable player count | 21 | +1,271 / -661 |
+| `jolly-cartwright` | Online multiplayer | 29 | +4,009 / -2,293 |
+
+### Current Status
+
+#### ✅ Working
+- Two-player online multiplayer tested end-to-end on dual simulators
+- Room creation, joining, lobby, game play, and game over flow all functional
+- Local play with 2–9 players (on compassionate-bhaskara branch)
+- Firebase Auth with RTDB-only backend
+
+#### 🔧 Remaining Work
+- **Deploy RTDB security rules** via Firebase CLI (currently using temporary open rules)
+- **Host migration**: If the host disconnects during an active game, the game is lost
+- **Reconnection handling**: Clients that disconnect mid-game need state restoration
+- **Connection status indicator**: Show players' connection state in the game UI
+- **Action validation**: Host should validate incoming actions before applying
+- **Merge branches**: Combine variable player count + online multiplayer into a single branch
+- **3+ player online testing**: Currently only tested with 2 players online
+
+### Lessons Learned
+
+1. **RNFB + Expo SDK 54 build issues**: The `useFrameworks: "static"` config with `@react-native-firebase` requires `buildReactNativeFromSource: true` — this significantly increases build time but resolves non-modular header errors
+2. **Web testing not viable**: `@react-native-firebase/*` packages are native-only, so web browser testing for multiplayer isn't possible — need two simulators or simulator + physical device
+3. **displayName can be undefined**: Firebase Auth users may not have a displayName set; all UI code touching it needs null-safe fallbacks
+4. **Host-authoritative simplifies sync**: Rather than complex conflict resolution, having one device run the engine and broadcast state dramatically simplifies the multiplayer architecture
+
+---
+
 ## Future Entries
 
 *Additional diary entries will be added here as development continues...*
