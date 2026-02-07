@@ -21,7 +21,11 @@ import {
   addTrickPoints,
   checkHandWinner,
   checkGameWinner,
+  createInitialScores,
+  createInitialHandsWon,
   POINTS_PER_TRICK,
+  type Scores,
+  type HandsWon,
 } from '../game-logic/scoring';
 
 export interface MultiplayerGameState {
@@ -31,8 +35,8 @@ export interface MultiplayerGameState {
   ledSuit: Suit | null;
   trumpSuit: Suit;
   trumpCard: Card | null;
-  scores: { team1: number; team2: number };
-  handsWon: { team1: number; team2: number };
+  scores: Scores;
+  handsWon: HandsWon;
   dealer: number;
   firstPlayerThisTrick: number;
   robberIndex: number;
@@ -114,16 +118,11 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
 
       // Check for robbing
       const playersWhoCanRob = findPlayersWhoCanRob(
-        room.players.map((p, i) => ({
-          id: i,
-          name: p.displayName,
-          hand: hands[i],
-          teamId: p.teamId,
-          isAI: false,
-        })),
+        hands,
         trumpCard,
         dealer,
-        room.ruleOptions
+        room.ruleOptions,
+        room.players.length
       );
       const trumpCardIsAce = isTrumpCardAce(trumpCard);
 
@@ -135,8 +134,8 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
         ledSuit: null,
         trumpSuit,
         trumpCard,
-        scores: { team1: 0, team2: 0 },
-        handsWon: { team1: 0, team2: 0 },
+        scores: createInitialScores(room.players.length),
+        handsWon: createInitialHandsWon(room.players.length),
         dealer,
         firstPlayerThisTrick: firstPlayer,
         robberIndex: playersWhoCanRob.length > 0 ? playersWhoCanRob[0] : -1,
@@ -202,10 +201,10 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
 
     // Calculate valid moves for current player
     if (gameState.currentPlayer === myPlayerSlot && gameState.gamePhase === 'playing') {
+      const trickCards = gameState.currentTrick.map((t: TrickCard) => t.card);
       const validMoves = getValidMoves(
         myHand,
-        gameState.currentTrick,
-        gameState.ledSuit,
+        trickCards,
         gameState.trumpSuit
       );
       set({ validMoves });
@@ -333,8 +332,10 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
       }
 
       // Validate move locally
-      if (!isLegalPlay(card, myHand, gameState.currentTrick, gameState.ledSuit, gameState.trumpSuit)) {
-        throw new Error('Illegal move');
+      const trickCards = gameState.currentTrick.map((t: TrickCard) => t.card);
+      const validation = isLegalPlay(card, myHand, trickCards, gameState.trumpSuit);
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Illegal move');
       }
 
       set({ syncStatus: 'syncing' });
@@ -390,12 +391,14 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
     const { gameState, players } = get();
     if (!gameState || !gameState.ledSuit) return;
 
-    const trickCards = gameState.currentTrick.map((t: any) => t.card);
+    const trickCards = gameState.currentTrick.map((t: TrickCard) => t.card);
+    const numPlayersInGame = Object.keys(players).length;
     const winnerIndex = getTrickWinner(
       trickCards,
-      gameState.ledSuit,
+      gameState.ledSuit!,
       gameState.trumpSuit,
-      gameState.firstPlayerThisTrick
+      gameState.firstPlayerThisTrick,
+      numPlayersInGame
     );
 
     const newScores = addTrickPoints(
@@ -407,16 +410,23 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
     const handComplete = Object.values(players).every((p: any) => p.hand.length === 0);
 
     if (handComplete) {
-      const handWinner = checkHandWinner(newScores);
-      const newHandsWon = { ...gameState.handsWon };
+      const handWinner = checkHandWinner(newScores, numPlayersInGame);
+      const newHandsWon: HandsWon = {
+        ...gameState.handsWon,
+        individual: [...gameState.handsWon.individual],
+      };
       const pack = gameState.pack || [];
 
-      if (handWinner) {
-        if (handWinner === 1) newHandsWon.team1++;
-        else newHandsWon.team2++;
+      if (handWinner !== null) {
+        if (newHandsWon.mode === "team") {
+          if (handWinner === 1) newHandsWon.team1++;
+          else newHandsWon.team2++;
+        } else {
+          newHandsWon.individual[handWinner]++;
+        }
       } else {
-        // Neither team reached 25 - deal more cards from pack if possible
-        const dealResult = dealFromPack(pack);
+        // Nobody reached 25 - deal more cards from pack if possible
+        const dealResult = dealFromPack(pack, numPlayersInGame);
         if (dealResult) {
           const updates: Record<string, any> = {
             'state/gamePhase': 'playing',
@@ -429,19 +439,31 @@ export const useMultiplayerGameStore = create<MultiplayerStore>((set, get) => ({
             'metadata/lastUpdated': Date.now(),
           };
           Object.entries(players).forEach(([uid, p]) => {
-            updates[`players/${uid}/hand`] = dealResult.hands[p.slot];
+            updates[`players/${uid}/hand`] = dealResult.hands[(p as any).slot];
           });
-          const gameRef = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}`);
+          const gameRef = firebaseDatabase!.ref(`${RTDB_PATHS.GAMES}/${gameId}`);
           await gameRef.update(updates);
           return;
         }
-        // Pack exhausted - team with more points wins
-        if (newScores.team1 > newScores.team2) newHandsWon.team1++;
-        else if (newScores.team2 > newScores.team1) newHandsWon.team2++;
+        // Pack exhausted - highest scorer wins
+        if (newScores.mode === "team") {
+          if (newScores.team1 > newScores.team2) newHandsWon.team1++;
+          else if (newScores.team2 > newScores.team1) newHandsWon.team2++;
+        } else {
+          let maxScore = 0;
+          let maxIdx = 0;
+          for (let i = 0; i < numPlayersInGame; i++) {
+            if (newScores.individual[i] > maxScore) {
+              maxScore = newScores.individual[i];
+              maxIdx = i;
+            }
+          }
+          if (maxScore > 0) newHandsWon.individual[maxIdx]++;
+        }
       }
 
       // Check game winner
-      const gameWinner = checkGameWinner(newHandsWon);
+      const gameWinner = checkGameWinner(newHandsWon, numPlayersInGame);
 
       const gameRef = firebaseDatabase.ref(`${RTDB_PATHS.GAMES}/${gameId}`);
       await gameRef.update({

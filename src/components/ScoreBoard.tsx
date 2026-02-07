@@ -1,28 +1,43 @@
 import { View, Text } from "react-native";
+import type { ScoreMode } from "../utils/constants";
 
 interface ScoreBoardProps {
-  team1Score: number;
-  team2Score: number;
-  team1HandsWon: number;
-  team2HandsWon: number;
+  scoringMode: ScoreMode;
+  // Team mode data
+  team1Score?: number;
+  team2Score?: number;
+  team1HandsWon?: number;
+  team2HandsWon?: number;
   tricksThisHand?: { team1: number; team2: number };
   team1Players?: string[];
   team2Players?: string[];
+  // Individual mode data
+  playerNames?: string[];
+  playerScores?: number[];
+  playerHandsWon?: number[];
+  humanPlayerIndex?: number;
+  // Common
   lastTrickWinner?: number | null;
+  targetScore?: number;
 }
 
-const POINTS_TO_WIN = 25;
-
 export default function ScoreBoard({
-  team1Score,
-  team2Score,
-  team1HandsWon,
-  team2HandsWon,
+  scoringMode,
+  team1Score = 0,
+  team2Score = 0,
+  team1HandsWon = 0,
+  team2HandsWon = 0,
   tricksThisHand = { team1: 0, team2: 0 },
-  team1Players = ["North", "You"],
-  team2Players = ["East", "West"],
+  team1Players = [],
+  team2Players = [],
+  playerNames = [],
+  playerScores = [],
+  playerHandsWon = [],
+  humanPlayerIndex = 0,
   lastTrickWinner,
+  targetScore = 25,
 }: ScoreBoardProps) {
+  const POINTS_TO_WIN = targetScore;
   const renderHandsDots = (won: number, teamColor: string) =>
     Array.from({ length: 5 }, (_, i) => (
       <View
@@ -42,15 +57,70 @@ export default function ScoreBoard({
     </View>
   );
 
+  if (scoringMode === "individual") {
+    // Individual mode: compact leaderboard
+    const leaderboard = playerNames
+      .map((name, idx) => ({
+        name: idx === humanPlayerIndex ? "You" : name,
+        score: playerScores[idx] ?? 0,
+        hands: playerHandsWon[idx] ?? 0,
+        isYou: idx === humanPlayerIndex,
+        isWinner: lastTrickWinner === idx,
+      }))
+      .sort((a, b) => b.score - a.score || b.hands - a.hands);
+
+    return (
+      <View className="px-4 py-3">
+        {leaderboard.map((entry, i) => (
+          <View
+            key={i}
+            className={`flex-row justify-between items-center py-1.5 px-3 rounded-lg mb-1 ${
+              entry.isWinner ? "bg-yellow-800/30 border border-yellow-500/50" :
+              entry.isYou ? "bg-blue-800/20" : "bg-neutral-800/40"
+            }`}
+          >
+            <View className="flex-row items-center flex-1">
+              <Text className="text-neutral-500 text-xs font-bold w-5">#{i + 1}</Text>
+              <Text
+                className={`text-sm font-semibold ${entry.isYou ? "text-blue-300" : "text-neutral-200"}`}
+                numberOfLines={1}
+              >
+                {entry.name}
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-3">
+              <View className="flex-row">
+                {Array.from({ length: 5 }, (_, j) => (
+                  <View
+                    key={j}
+                    className={`w-2 h-2 rounded-full mx-0.5 ${
+                      j < entry.hands
+                        ? (entry.isYou ? "bg-blue-400" : "bg-red-400")
+                        : "bg-neutral-700/50"
+                    }`}
+                  />
+                ))}
+              </View>
+              <Text className="text-white text-lg font-bold min-w-[30px] text-right">
+                {entry.score}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  // Team mode: original 2-column layout
   const getTeamForPlayer = (playerIndex: number) => playerIndex % 2 === 0 ? 1 : 2;
-  const winnerTeam = lastTrickWinner !== null && lastTrickWinner !== undefined 
-    ? getTeamForPlayer(lastTrickWinner) 
+  const winnerTeam = lastTrickWinner !== null && lastTrickWinner !== undefined
+    ? getTeamForPlayer(lastTrickWinner)
     : null;
 
   return (
     <View className="px-4 py-3 flex-row justify-between items-stretch">
       {/* Team 1 - Blue */}
-      <View 
+      <View
         className={`flex-1 items-center p-3 rounded-xl mr-2 ${
           winnerTeam === 1 ? "bg-blue-800/40 border-2 border-blue-400" : "bg-neutral-800/60"
         }`}
@@ -82,7 +152,7 @@ export default function ScoreBoard({
       </View>
 
       {/* Team 2 - Red */}
-      <View 
+      <View
         className={`flex-1 items-center p-3 rounded-xl ml-2 ${
           winnerTeam === 2 ? "bg-red-800/40 border-2 border-red-400" : "bg-neutral-800/60"
         }`}

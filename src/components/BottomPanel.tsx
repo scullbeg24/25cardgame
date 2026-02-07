@@ -15,7 +15,7 @@ interface Player {
   name: string;
   score: number;
   tricksWon: number;
-  teamIndex: 0 | 1;
+  teamIndex: number;
 }
 
 interface BottomPanelProps {
@@ -54,9 +54,15 @@ export default function BottomPanel({
     );
   };
 
-  // Get team scores
+  // Get scores - handle both team and individual modes
+  const isTeamMode = players.length === 4 && players.some(p => p.teamIndex === 0) && players.some(p => p.teamIndex === 1);
   const team1Score = players.find(p => p.teamIndex === 0)?.score ?? 0;
   const team2Score = players.find(p => p.teamIndex === 1)?.score ?? 0;
+
+  // For individual mode, find "You" score and best opponent
+  const youPlayer = players.find(p => p.name === "You");
+  const youScore = youPlayer?.score ?? 0;
+  const bestOpp = players.filter(p => p.name !== "You").reduce((best, p) => p.score > best.score ? p : best, { name: "", score: 0, tricksWon: 0, teamIndex: 0 });
 
   return (
     <View
@@ -82,18 +88,37 @@ export default function BottomPanel({
             borderColor: colors.softUI.border,
           }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team1.primary }} />
-            <Text style={{ color: colors.teams.team1.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
-              {team1Score}
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team2.primary }} />
-            <Text style={{ color: colors.teams.team2.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
-              {team2Score}
-            </Text>
-          </View>
+          {isTeamMode ? (
+            <>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team1.primary }} />
+                <Text style={{ color: colors.teams.team1.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
+                  {team1Score}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teams.team2.primary }} />
+                <Text style={{ color: colors.teams.team2.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
+                  {team2Score}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+                <Text style={{ color: colors.teams.team1.light, fontSize: 10, fontWeight: "600" }}>You</Text>
+                <Text style={{ color: colors.teams.team1.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
+                  {youScore}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text style={{ color: colors.text.muted, fontSize: 9 }} numberOfLines={1}>Best</Text>
+                <Text style={{ color: colors.teams.team2.light, fontSize: 14, fontWeight: "bold", marginLeft: 4 }}>
+                  {bestOpp.score}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Cards In Hand - centered, overlapping */}

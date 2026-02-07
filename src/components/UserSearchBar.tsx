@@ -116,7 +116,7 @@ export default function UserSearchBar({
                 }}
               >
                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.gold.primary }}>
-                  {user.displayName.charAt(0).toUpperCase()}
+                  {(user.displayName || user.username || '?').charAt(0).toUpperCase()}
                 </Text>
               </View>
 

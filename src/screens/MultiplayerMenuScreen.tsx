@@ -40,7 +40,7 @@ export default function MultiplayerMenuScreen() {
       await createRoom(
         user.uid,
         userProfile.username,
-        userProfile.displayName,
+        userProfile.displayName || userProfile.username || 'Player',
         4 // Max 4 players
       );
       navigation.navigate('RoomLobby');
@@ -62,7 +62,7 @@ export default function MultiplayerMenuScreen() {
         roomCode.trim().toUpperCase(),
         user.uid,
         userProfile.username,
-        userProfile.displayName
+        userProfile.displayName || userProfile.username || 'Player'
       );
       navigation.navigate('RoomLobby');
     } catch (error: any) {

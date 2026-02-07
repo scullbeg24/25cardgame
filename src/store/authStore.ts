@@ -92,7 +92,32 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         },
       };
 
-      console.log('[Auth] REGISTRATION COMPLETE - NO DATABASE USED');
+      // Save user profile to Realtime Database
+      if (firebaseDatabase) {
+        try {
+          await firebaseDatabase
+            .ref(`${RTDB_PATHS.USERS}/${user.uid}`)
+            .set({
+              uid: user.uid,
+              username: username.toLowerCase(),
+              email: email.toLowerCase(),
+              displayName: username,
+              createdAt: new Date().toISOString(),
+              lastOnline: new Date().toISOString(),
+              stats: {
+                gamesPlayed: 0,
+                gamesWon: 0,
+                winRate: 0,
+              },
+            });
+          console.log('[Auth] Profile saved to database');
+        } catch (dbError) {
+          console.warn('[Auth] Could not save profile to database:', dbError);
+          // Registration still succeeds even if DB write fails
+        }
+      }
+
+      console.log('[Auth] REGISTRATION COMPLETE');
 
       set({
         user,
@@ -102,11 +127,26 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       });
     } catch (error: any) {
       console.error('[Auth] Registration failed:', error);
+
+      // Map Firebase error codes to user-friendly messages
+      let friendlyMessage = 'Failed to create account';
+      if (error.code === 'auth/email-already-in-use') {
+        friendlyMessage = 'An account with this email already exists. Please sign in instead.';
+      } else if (error.code === 'auth/invalid-email') {
+        friendlyMessage = 'Please enter a valid email address.';
+      } else if (error.code === 'auth/weak-password') {
+        friendlyMessage = 'Password is too weak. Please use at least 6 characters.';
+      } else if (error.code === 'auth/network-request-failed') {
+        friendlyMessage = 'Network error. Please check your connection.';
+      } else if (error.message) {
+        friendlyMessage = error.message;
+      }
+
       set({
-        error: error.message || 'Failed to sign up',
+        error: friendlyMessage,
         isLoading: false,
       });
-      throw error;
+      throw new Error(friendlyMessage);
     }
   },
 
@@ -148,11 +188,28 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       });
     } catch (error: any) {
       console.error('Sign in error:', error);
+
+      // Map Firebase error codes to user-friendly messages
+      let friendlyMessage = 'Failed to sign in';
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        friendlyMessage = 'Invalid email or password. Please try again.';
+      } else if (error.code === 'auth/invalid-email') {
+        friendlyMessage = 'Please enter a valid email address.';
+      } else if (error.code === 'auth/user-disabled') {
+        friendlyMessage = 'This account has been disabled. Please contact support.';
+      } else if (error.code === 'auth/too-many-requests') {
+        friendlyMessage = 'Too many failed attempts. Please try again later.';
+      } else if (error.code === 'auth/network-request-failed') {
+        friendlyMessage = 'Network error. Please check your connection.';
+      } else if (error.message) {
+        friendlyMessage = error.message;
+      }
+
       set({
-        error: error.message || 'Failed to sign in',
+        error: friendlyMessage,
         isLoading: false,
       });
-      throw error;
+      throw new Error(friendlyMessage);
     }
   },
 
@@ -302,12 +359,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
       // Fallback: create minimal profile from Auth user
       if (authUser) {
+        const fallbackName = authUser.displayName || authUser.email?.split('@')[0] || 'Player';
         const userProfile: UserProfile = {
           uid: authUser.uid,
-          username: (authUser.displayName || authUser.email || 'user').toLowerCase(),
+          username: (authUser.displayName || authUser.email?.split('@')[0] || 'player').toLowerCase(),
           email: authUser.email || '',
-          displayName: authUser.displayName || 'User',
-          photoURL: authUser.photoURL,
+          displayName: fallbackName,
+          photoURL: authUser.photoURL || undefined,
           createdAt: new Date(),
           lastOnline: new Date(),
           stats: { gamesPlayed: 0, gamesWon: 0, winRate: 0 },
@@ -328,11 +386,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
 
     // Listen for auth state changes
-    const unsubscribe = firebaseAuth.onAuthStateChanged((user) => {
+    const unsubscribe = firebaseAuth.onAuthStateChanged(async (user) => {
       try {
         if (user) {
-          get().loadUserProfile(user.uid, user);
-          // presenceService.start(user.uid); // Disabled - database permission issues
+          // Load profile BEFORE setting isAuthenticated to avoid render errors
+          await get().loadUserProfile(user.uid, user);
           set({
             user,
             isAuthenticated: true,

@@ -101,7 +101,7 @@ export default function ProfileScreen() {
                 }}
               >
                 <Text style={{ fontSize: 48, fontWeight: 'bold', color: colors.gold.primary }}>
-                  {userProfile.displayName.charAt(0).toUpperCase()}
+                  {(userProfile.displayName || userProfile.username || '?').charAt(0).toUpperCase()}
                 </Text>
               </View>
             </View>
@@ -159,7 +159,7 @@ export default function ProfileScreen() {
                         title="Cancel"
                         variant="outline"
                         onPress={() => {
-                          setDisplayName(userProfile.displayName);
+                          setDisplayName(userProfile.displayName || userProfile.username || '');
                           setIsEditing(false);
                         }}
                       />
@@ -181,7 +181,7 @@ export default function ProfileScreen() {
                     fontWeight: '600',
                   }}
                 >
-                  {userProfile.displayName}
+                  {userProfile.displayName || userProfile.username || 'Player'}
                 </Text>
               )}
             </View>

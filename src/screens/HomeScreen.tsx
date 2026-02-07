@@ -379,11 +379,11 @@ export default function HomeScreen() {
                   }}
                 >
                   <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.gold.primary }}>
-                    {userProfile.displayName.charAt(0).toUpperCase()}
+                    {(userProfile.displayName || userProfile.username || '?').charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text.primary }}>
-                  {userProfile.displayName}
+                  {userProfile.displayName || userProfile.username || 'Player'}
                 </Text>
               </TouchableOpacity>
 

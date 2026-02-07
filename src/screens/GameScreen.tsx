@@ -8,7 +8,7 @@ import { useGameLogStore } from "../store/gameLogStore";
 import type { Card, Suit } from "../game-logic/cards";
 import { isTrump } from "../game-logic/cards";
 import { selectAICard, getAIDelay, type TrickEntry } from "../game-logic/ai";
-import { HUMAN_PLAYER_INDEX } from "../utils/constants";
+import { getHumanPlayerIndex } from "../utils/constants";
 import {
   playCardPlay,
   playCardDeal,
@@ -39,26 +39,6 @@ import type { RootStackParamList } from "./HomeScreen";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-// Calculate badge position based on player index
-// Players: 0=North (top), 1=East (right), 2=South/You (bottom), 3=West (left)
-const getPlayerBadgePosition = (playerIndex: number) => {
-  const centerY = SCREEN_HEIGHT * 0.35;
-  const centerX = SCREEN_WIDTH / 2;
-  
-  switch (playerIndex) {
-    case 0: // North - top
-      return { top: SCREEN_HEIGHT * 0.15, left: centerX - 30 };
-    case 1: // East - right
-      return { top: centerY, left: SCREEN_WIDTH - 80 };
-    case 2: // South/You - bottom (near center since cards are at bottom)
-      return { top: SCREEN_HEIGHT * 0.45, left: centerX - 30 };
-    case 3: // West - left
-      return { top: centerY, left: 20 };
-    default:
-      return { top: centerY, left: centerX - 30 };
-  }
-};
-
 type GameNavProp = NativeStackNavigationProp<RootStackParamList, "Game">;
 
 export default function GameScreen() {
@@ -67,18 +47,20 @@ export default function GameScreen() {
   const [lastTrickWinner, setLastTrickWinner] = useState<number | null>(null);
   const [isDealing, setIsDealing] = useState(false);
   const [dealingComplete, setDealingComplete] = useState(false);
-  
+  const [dealAnimationDone, setDealAnimationDone] = useState(false);
+
   // Alert modal state
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
-  
+
   // Badge and animation states
   const [showTrickWinBadge, setShowTrickWinBadge] = useState(false);
   const [trickWinTeam, setTrickWinTeam] = useState<0 | 1>(0);
   const [showHandWinOverlay, setShowHandWinOverlay] = useState(false);
-  const [handWinTeam, setHandWinTeam] = useState<1 | 2>(1);
-  const [handWinScores, setHandWinScores] = useState({ team1: 0, team2: 0 });
+  const [handWinLabel, setHandWinLabel] = useState("");
+  const [handWinIsYours, setHandWinIsYours] = useState(false);
+  const [handWinScore, setHandWinScore] = useState(0);
   const [showRobBadge, setShowRobBadge] = useState(false);
   const [robPlayerName, setRobPlayerName] = useState("");
   const [robIsYou, setRobIsYou] = useState(false);
@@ -95,11 +77,11 @@ export default function GameScreen() {
   const [handWinOverlayComplete, setHandWinOverlayComplete] = useState(true);
   const [pendingHandComplete, setPendingHandComplete] = useState(false);
   const [showHandHistory, setShowHandHistory] = useState(false);
-  
+
   // Score history for comeback detection
   const scoreHistory = useRef<Array<{ team1: number; team2: number }>>([]);
   const prevScoresRef = useRef({ team1: 0, team2: 0 });
-  
+
   // Game log functions
   const {
     logGameStart,
@@ -117,6 +99,8 @@ export default function GameScreen() {
 
   const {
     players,
+    numPlayers,
+    scoringMode,
     trumpSuit,
     trumpCard,
     currentTrick,
@@ -129,6 +113,8 @@ export default function GameScreen() {
     firstPlayerThisTrick,
     robberIndex,
     trumpCardIsAce,
+    robbedByPlayer,
+    targetScore,
     playCard,
     completeTrick,
     completeHand,
@@ -136,94 +122,98 @@ export default function GameScreen() {
     declineRob,
   } = useGameStore();
 
-  const humanPlayer = players[HUMAN_PLAYER_INDEX];
-  const tricksThisHand = {
-    team1: Math.floor(scores.team1 / 5),
-    team2: Math.floor(scores.team2 / 5),
-  };
+  const humanPlayerIndex = getHumanPlayerIndex(numPlayers);
+  const humanPlayer = players[humanPlayerIndex];
 
   // Prepare player data for components
-  const playerScores = players.map((p, idx) => ({
-    name: p.name,
-    score: idx % 2 === 0 ? scores.team1 : scores.team2,
-    tricksWon: idx % 2 === 0 ? tricksThisHand.team1 : tricksThisHand.team2,
-    teamIndex: (idx % 2) as 0 | 1,
-  }));
-
-  // Prepare bottom panel player list (all 4 players)
-  const bottomPanelPlayers = players.map((p, idx) => ({
-    name: idx === 2 ? "You" : p.name,
-    score: idx % 2 === 0 ? scores.team1 : scores.team2,
-    tricksWon: idx % 2 === 0 ? tricksThisHand.team1 : tricksThisHand.team2,
-    teamIndex: (idx % 2) as 0 | 1,
-  }));
+  const playerScores = players.map((p, idx) => {
+    if (scoringMode === "team") {
+      const teamIdx = idx % 2 === 0 ? 0 : 1;
+      const teamScore = teamIdx === 0 ? scores.team1 : scores.team2;
+      return {
+        name: p.name,
+        score: teamScore,
+        tricksWon: Math.floor(teamScore / 5),
+        teamIndex: teamIdx,
+      };
+    } else {
+      return {
+        name: p.name,
+        score: scores.individual[idx] ?? 0,
+        tricksWon: Math.floor((scores.individual[idx] ?? 0) / 5),
+        teamIndex: idx, // individual color index
+      };
+    }
+  });
 
   // Track last trick winner for visual feedback and logging
   const prevTrickLength = useRef(currentTrick.length);
   const prevTrickCards = useRef<Card[]>([]);
-  
+
   useEffect(() => {
-    if (currentTrick.length === 0 && gamePhase === "playing" && prevTrickLength.current === 4) {
+    if (currentTrick.length === 0 && gamePhase === "playing" && prevTrickLength.current === numPlayers) {
       setLastTrickWinner(firstPlayerThisTrick);
       // Log trick win
-      const winnerName = firstPlayerThisTrick === HUMAN_PLAYER_INDEX 
-        ? "You" 
+      const winnerName = firstPlayerThisTrick === humanPlayerIndex
+        ? "You"
         : players[firstPlayerThisTrick]?.name ?? "Player";
       logTrickWon(winnerName, 5);
-      
+
       // Play trick win sound
       playTrickWon();
-      
+
       // Show trick win badge near the winner
-      const winnerTeamIndex = (firstPlayerThisTrick % 2) as 0 | 1;
+      const winnerTeamIndex = scoringMode === "team" ? ((firstPlayerThisTrick % 2) as 0 | 1) : 0;
       setTrickWinTeam(winnerTeamIndex);
       setTrickWinnerIndex(firstPlayerThisTrick);
       setShowTrickWinBadge(true);
-      
+
       // Check for perfect trick (all trumps)
-      if (prevTrickCards.current.length === 4 && isPerfectTrumpTrick(prevTrickCards.current, trumpSuit)) {
+      if (prevTrickCards.current.length === numPlayers && isPerfectTrumpTrick(prevTrickCards.current, trumpSuit)) {
         setTimeout(() => {
           setShowPerfectTrick(true);
           playPerfectTrick();
         }, 500);
       }
-      
+
       const timer = setTimeout(() => setLastTrickWinner(null), 2000);
       return () => clearTimeout(timer);
     }
-    
+
     // Store trick cards for perfect trick detection
     if (currentTrick.length > 0) {
       prevTrickCards.current = currentTrick.map(tc => tc.card);
     }
     prevTrickLength.current = currentTrick.length;
-  }, [currentTrick.length, gamePhase, firstPlayerThisTrick, players, logTrickWon, trumpSuit, currentTrick]);
-  
-  // Track score history for comeback detection (no milestone badges)
+  }, [currentTrick.length, gamePhase, firstPlayerThisTrick, players, logTrickWon, trumpSuit, currentTrick, numPlayers, humanPlayerIndex, scoringMode]);
+
+  // Track score history for comeback detection (team mode only)
   useEffect(() => {
-    if (scores.team1 !== prevScoresRef.current.team1 || scores.team2 !== prevScoresRef.current.team2) {
-      scoreHistory.current.push({ team1: scores.team1, team2: scores.team2 });
+    if (scoringMode === "team") {
+      if (scores.team1 !== prevScoresRef.current.team1 || scores.team2 !== prevScoresRef.current.team2) {
+        scoreHistory.current.push({ team1: scores.team1, team2: scores.team2 });
+      }
+      prevScoresRef.current = { team1: scores.team1, team2: scores.team2 };
     }
-    prevScoresRef.current = { team1: scores.team1, team2: scores.team2 };
-  }, [scores.team1, scores.team2]);
-  
+  }, [scores.team1, scores.team2, scoringMode]);
+
   // Detect top trump plays
   useEffect(() => {
     if (currentTrick.length > 0) {
       const lastPlay = currentTrick[currentTrick.length - 1];
       if (lastPlay && isTopTrump(lastPlay.card, trumpSuit)) {
-        const playerName = lastPlay.playerIndex === HUMAN_PLAYER_INDEX 
-          ? "You" 
+        const playerName = lastPlay.playerIndex === humanPlayerIndex
+          ? "You"
           : players[lastPlay.playerIndex]?.name ?? "Player";
         setTopTrumpCard(lastPlay.card);
         setTopTrumpPlayer(playerName);
-        setTopTrumpIsYou(lastPlay.playerIndex === HUMAN_PLAYER_INDEX);
+        setTopTrumpIsYou(lastPlay.playerIndex === humanPlayerIndex);
         setTopTrumpPlayerIndex(lastPlay.playerIndex);
         setShowTopTrump(true);
         playTopTrump();
       }
     }
-  }, [currentTrick.length, currentTrick, trumpSuit, players]);
+  }, [currentTrick.length, currentTrick, trumpSuit, players, humanPlayerIndex]);
 
   // Trigger dealing animation when game starts or new hand
   // Only start dealing after HandWinOverlay animation has completed
@@ -244,14 +234,20 @@ export default function GameScreen() {
       logTrumpRevealed(trumpCard);
       playTrumpReveal();
     }
+    // 1.5s pause before rob phase can begin
+    setTimeout(() => setDealAnimationDone(true), 1500);
   };
 
-  // Reset dealing state when a new hand starts
+  // Reset dealing state when a new hand starts (scores reset to 0)
   useEffect(() => {
-    if (scores.team1 === 0 && scores.team2 === 0) {
+    const isScoreReset = scoringMode === "team"
+      ? (scores.team1 === 0 && scores.team2 === 0)
+      : scores.individual.every(s => s === 0);
+    if (isScoreReset) {
       setDealingComplete(false);
+      setDealAnimationDone(false);
     }
-  }, [scores.team1, scores.team2]);
+  }, [scores, scoringMode]);
 
   // Log game start on mount (clear previous logs)
   const hasLoggedGameStart = useRef(false);
@@ -267,67 +263,101 @@ export default function GameScreen() {
   }, [humanPlayer, players, dealer, clearLogs, logGameStart, logHandStart]);
 
   // Track hand number and log when new hand starts
-  const handNumber = useRef(handsWon.team1 + handsWon.team2 + 1);
-  const prevHandsWon = useRef({ team1: handsWon.team1, team2: handsWon.team2 });
+  const getTotalHandsWon = () => {
+    if (handsWon.mode === "team") return handsWon.team1 + handsWon.team2;
+    return handsWon.individual.reduce((a, b) => a + b, 0);
+  };
+  const handNumber = useRef(getTotalHandsWon() + 1);
+  const prevTotalHandsWon = useRef(getTotalHandsWon());
+
   useEffect(() => {
-    const totalHands = handsWon.team1 + handsWon.team2;
-    const prevTotal = prevHandsWon.current.team1 + prevHandsWon.current.team2;
-    
+    const totalHands = getTotalHandsWon();
+    const prevTotal = prevTotalHandsWon.current;
+
     // Check if a hand was won
     if (totalHands > prevTotal && gamePhase !== "gameOver") {
-      // Determine which team won
-      const winningTeam: 1 | 2 = handsWon.team1 > prevHandsWon.current.team1 ? 1 : 2;
-      const winningScore = winningTeam === 1 ? scores.team1 : scores.team2;
-      
+      let winnerLabel: string;
+      let winningScore: number;
+      let isYourWin: boolean;
+
+      if (scoringMode === "team") {
+        const winningTeam: 1 | 2 = handsWon.team1 > (prevTotalHandsWon.current === 0 ? -1 : handsWon.team1 - 1) && handsWon.team1 > 0 ? 1 : 2;
+        winnerLabel = winningTeam === 1 ? "Your Team" : "Opponents";
+        winningScore = winningTeam === 1 ? scores.team1 : scores.team2;
+        isYourWin = winningTeam === 1;
+
+        // Comeback detection (team mode only)
+        if (winningScore >= targetScore) {
+          const wasTeamBehind = scoreHistory.current.some(s => {
+            if (winningTeam === 1) return s.team2 - s.team1 >= 10;
+            return s.team1 - s.team2 >= 10;
+          });
+          if (wasTeamBehind) {
+            setComebackTeam(winningTeam === 1 ? 0 : 1);
+            setTimeout(() => setShowComebackWin(true), 2000);
+          }
+        }
+
+        setHandWinLabel(winnerLabel);
+        setHandWinIsYours(isYourWin);
+        setHandWinScore(winningScore);
+      } else {
+        // Individual mode - find who won the most recent hand
+        // Look at handsWon.individual to find who just incremented
+        let winnerIdx = 0;
+        let maxHands = 0;
+        for (let i = 0; i < numPlayers; i++) {
+          if ((handsWon.individual[i] ?? 0) > maxHands) {
+            maxHands = handsWon.individual[i];
+            winnerIdx = i;
+          }
+        }
+        winnerLabel = winnerIdx === humanPlayerIndex ? "You" : (players[winnerIdx]?.name ?? "Player");
+        winningScore = scores.individual[winnerIdx] ?? 0;
+        isYourWin = winnerIdx === humanPlayerIndex;
+        setHandWinLabel(winnerLabel);
+        setHandWinIsYours(isYourWin);
+        setHandWinScore(winningScore);
+      }
+
       // Log hand win
-      logHandWon(winningTeam, winningScore);
-      
-      // Only celebrate (overlay, sound, comeback badge) when a team reaches 25 points
-      if (winningScore >= 25) {
+      logHandWon(winnerLabel, winningScore);
+
+      // Only celebrate when score >= 25
+      if (winningScore >= targetScore) {
         playHandWon();
-        setHandWinTeam(winningTeam);
-        setHandWinScores({ team1: scores.team1, team2: scores.team2 });
         setHandWinOverlayComplete(false);
         setShowHandWinOverlay(true);
-        
-        const wasTeamBehind = scoreHistory.current.some(s => {
-          if (winningTeam === 1) return s.team2 - s.team1 >= 10;
-          return s.team1 - s.team2 >= 10;
-        });
-        if (wasTeamBehind) {
-          setComebackTeam(winningTeam === 1 ? 0 : 1);
-          setTimeout(() => setShowComebackWin(true), 2000);
-        }
       } else {
-        // Hand won by fallback (pack exhausted) - no celebration, advance immediately
+        // Hand won by fallback - no celebration
         setHandWinOverlayComplete(true);
       }
-      
+
       // Reset score history for next hand
       scoreHistory.current = [];
-      
+
       // Update hand number for next hand
       handNumber.current = totalHands + 1;
-      
+
       // Log new hand starting (after overlay dismisses)
       setTimeout(() => {
         const dealerName = players[dealer]?.name ?? "Dealer";
         logHandStart(handNumber.current, dealerName);
       }, 2200);
     }
-    
-    prevHandsWon.current = { team1: handsWon.team1, team2: handsWon.team2 };
-  }, [handsWon.team1, handsWon.team2, gamePhase, dealer, players, logHandWon, logHandStart, scores]);
+
+    prevTotalHandsWon.current = totalHands;
+  }, [handsWon, gamePhase, dealer, players, logHandWon, logHandStart, scores, scoringMode, numPlayers, humanPlayerIndex]);
 
   // Delay trick completion so players can see the played cards
   const trickCompleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   useEffect(() => {
     if (gamePhase === "trickComplete") {
       trickCompleteTimeoutRef.current = setTimeout(() => {
         completeTrick();
       }, 1500);
-      
+
       return () => {
         if (trickCompleteTimeoutRef.current) {
           clearTimeout(trickCompleteTimeoutRef.current);
@@ -339,7 +369,6 @@ export default function GameScreen() {
   // When hand is complete, wait for the HandWinOverlay to finish before dealing next hand
   useEffect(() => {
     if (gamePhase === "handComplete") {
-      // Mark that we need to complete the hand after overlay finishes
       setPendingHandComplete(true);
     }
   }, [gamePhase]);
@@ -363,8 +392,8 @@ export default function GameScreen() {
   useEffect(() => {
     if (gamePhase === "robbing" && robberIndex !== -1 && trumpCard) {
       if (prevRobberIndex.current !== robberIndex) {
-        const robberName = robberIndex === HUMAN_PLAYER_INDEX 
-          ? "You" 
+        const robberName = robberIndex === humanPlayerIndex
+          ? "You"
           : players[robberIndex]?.name ?? "Player";
         logRobOffered(robberName, trumpCard);
         prevRobberIndex.current = robberIndex;
@@ -372,31 +401,35 @@ export default function GameScreen() {
     } else if (gamePhase !== "robbing") {
       prevRobberIndex.current = -1;
     }
-  }, [gamePhase, robberIndex, trumpCard, players, logRobOffered]);
+  }, [gamePhase, robberIndex, trumpCard, players, logRobOffered, humanPlayerIndex]);
 
-  // Handle AI robbing decision
+  // Handle AI robbing decision - gated on dealAnimationDone for 1.5s post-deal pause
   useEffect(() => {
-    if (gamePhase !== "robbing" || robberIndex === -1) return;
-    
+    if (gamePhase !== "robbing" || robberIndex === -1 || !dealAnimationDone) return;
+
     const robber = players[robberIndex];
     if (!robber?.isAI || !trumpCard) return;
-    
+
     const t = setTimeout(() => {
       // AI always robs (it's generally advantageous)
-      // Find the lowest value card to discard
       const hand = robber.hand;
       if (hand.length === 0) {
         declineRob();
         logRobDeclined(robber.name);
         return;
       }
-      
-      // Find a card to discard - prefer lowest non-trump card
-      // For simplicity, just pick the first card that isn't the Ace of trump
-      const cardToDiscard = hand.find(
-        (c) => !(c.suit === trumpCard.suit && c.rank === "A")
-      ) ?? hand[0];
-      
+
+      // Find the weakest card to discard - prefer non-trump, lowest value
+      const nonTrumpCards = hand.filter(
+        (c) => c.suit !== trumpCard.suit && !(c.suit === "hearts" && (c.rank === "A" || c.rank === "5"))
+      );
+      const cardToDiscard = nonTrumpCards.length > 0
+        ? nonTrumpCards.reduce((weakest, c) => {
+            const rankOrder: Record<string, number> = { "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6, "8": 7, "9": 8, "10": 9, "J": 10, "Q": 11, "K": 12, "A": 13 };
+            return (rankOrder[c.rank] ?? 0) < (rankOrder[weakest.rank] ?? 0) ? c : weakest;
+          })
+        : hand.find((c) => !(c.suit === trumpCard.suit && c.rank === "A")) ?? hand[0];
+
       robPack(cardToDiscard);
       logRobAccepted(robber.name, trumpCard);
       // Show rob badge for AI and play sound
@@ -404,11 +437,12 @@ export default function GameScreen() {
       setRobIsYou(false);
       setShowRobBadge(true);
       playRob();
-    }, 800);
-    
-    return () => clearTimeout(t);
-  }, [gamePhase, robberIndex, players, trumpCard, robPack, declineRob, logRobAccepted, logRobDeclined]);
+    }, 1500);
 
+    return () => clearTimeout(t);
+  }, [gamePhase, robberIndex, players, trumpCard, robPack, declineRob, logRobAccepted, logRobDeclined, dealAnimationDone]);
+
+  // AI card play
   useEffect(() => {
     if (
       gamePhase !== "playing" ||
@@ -438,6 +472,7 @@ export default function GameScreen() {
         firstPlayerThisTrick: useGameStore.getState().firstPlayerThisTrick,
         scores,
         ruleOptions: useGameStore.getState().ruleOptions,
+        numPlayers,
       };
 
       const card = selectAICard(context, player.difficulty ?? "medium");
@@ -458,6 +493,7 @@ export default function GameScreen() {
     scores,
     playCard,
     logCardPlayed,
+    numPlayers,
   ]);
 
   // Show alert helper function
@@ -468,33 +504,32 @@ export default function GameScreen() {
   }, []);
 
   const handleCardSelect = (card: Card) => {
-    if (gamePhase !== "playing" || currentPlayer !== HUMAN_PLAYER_INDEX) return;
-    
-    const result = playCard(HUMAN_PLAYER_INDEX, card);
-    
+    if (gamePhase !== "playing" || currentPlayer !== humanPlayerIndex) return;
+
+    const result = playCard(humanPlayerIndex, card);
+
     // Handle invalid play - show alert to player
-    if (result && !result.success && result.error) {
+    if (!result.success && result.error) {
       const errorMessage = getInvalidPlayMessage(result.error);
       showAlert("Invalid Play", errorMessage);
       logInvalidPlay("You", result.error);
       playInvalidMove();
-    } else if (!result || result.success !== false) {
-      // Card was played successfully - log it and play sound
+    } else if (result.success) {
       logCardPlayed("You", card);
       playCardPlay();
     }
   };
-  
+
   // Get user-friendly error message for invalid plays
   const getInvalidPlayMessage = (error: string): string => {
     const messages: Record<string, string> = {
-      "You must play trump when trump was led": 
+      "You must play trump when trump was led":
         "Trump was led this trick. You must play a trump card if you have one in your hand.",
-      "You must follow the led suit": 
-        "You must follow the suit that was led. Play a card of the same suit if you have one.",
-      "Card is not in your hand": 
+      "You must follow the led suit or play trump":
+        "You must follow the suit that was led, or play a trump card.",
+      "Card is not in your hand":
         "This card is not in your hand. Please select a valid card.",
-      "Not your turn": 
+      "Not your turn":
         "It's not your turn yet. Please wait for other players.",
     };
     return messages[error] || error;
@@ -505,7 +540,6 @@ export default function GameScreen() {
     if (trumpCard) {
       robPack(cardToDiscard);
       logRobAccepted("You", trumpCard);
-      // Show rob badge and play sound
       setRobPlayerName("You");
       setRobIsYou(true);
       setShowRobBadge(true);
@@ -523,12 +557,12 @@ export default function GameScreen() {
   }
 
   const currentPlayerName = players[currentPlayer]?.name || "Player";
-  const isYourTurn = currentPlayer === HUMAN_PLAYER_INDEX;
+  const isYourTurn = currentPlayer === humanPlayerIndex;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background.primary} />
-      
+
       {/* Navigation header with Back, Hand History, and Home buttons */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: colors.background.secondary }}>
         <NavigationHeader
@@ -559,7 +593,7 @@ export default function GameScreen() {
         />
       </SafeAreaView>
 
-      {/* Game Log Modal - view full log (minimized during regular play) */}
+      {/* Game Log Modal */}
       <Modal
         visible={showHandHistory}
         transparent
@@ -587,7 +621,7 @@ export default function GameScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Main game table area - MUST take the center space */}
+      {/* Main game table area */}
       <View style={{ flex: 1 }}>
         <GameTable
           currentTrick={currentTrick}
@@ -600,6 +634,9 @@ export default function GameScreen() {
           dealer={dealer}
           playerScores={playerScores}
           playerCardCounts={players.map((p) => p.hand.length)}
+          numPlayers={numPlayers}
+          scoringMode={scoringMode}
+          robbedByPlayer={robbedByPlayer}
         />
       </View>
 
@@ -608,12 +645,19 @@ export default function GameScreen() {
         <DealingAnimation
           playerHands={players.map(p => p.hand)}
           onComplete={handleDealingComplete}
+          numPlayers={numPlayers}
+          playerNames={players.map(p => p.name)}
         />
       )}
 
       {/* Bottom Panel with Cards and Score */}
       <BottomPanel
-        players={bottomPanelPlayers}
+        players={playerScores.map((ps, idx) => ({
+          name: idx === humanPlayerIndex ? "You" : ps.name,
+          score: ps.score,
+          tricksWon: ps.tricksWon,
+          teamIndex: scoringMode === "team" ? (idx % 2 as 0 | 1) : idx,
+        }))}
         trumpCard={trumpCard}
         trumpSuit={trumpSuit}
         cards={dealingComplete || !isDealing ? humanPlayer.hand : []}
@@ -622,132 +666,138 @@ export default function GameScreen() {
         isYourTurn={isYourTurn && gamePhase === "playing"}
       />
 
-        {/* Rob the Ace Prompt Modal */}
-        <RobPrompt
-          visible={gamePhase === "robbing" && robberIndex === HUMAN_PLAYER_INDEX}
-          hand={players[robberIndex]?.hand ?? []}
-          trumpCard={trumpCard!}
-          onRob={handleRob}
-          onDecline={handleDeclineRob}
-          isForcedRob={trumpCardIsAce}
-          robberName={players[robberIndex]?.name}
-        />
+      {/* Rob the Ace Prompt Modal - gated on dealAnimationDone */}
+      <RobPrompt
+        visible={gamePhase === "robbing" && robberIndex === humanPlayerIndex && dealAnimationDone}
+        hand={players[robberIndex]?.hand ?? []}
+        trumpCard={trumpCard!}
+        onRob={handleRob}
+        onDecline={handleDeclineRob}
+        isForcedRob={trumpCardIsAce}
+        robberName={players[robberIndex]?.name}
+      />
 
-        {/* Invalid Play Alert Modal */}
-        <AlertModal
-          visible={alertVisible}
-          title={alertTitle}
-          message={alertMessage}
-          type="error"
-          onOk={() => setAlertVisible(false)}
-          okText="Got it"
-        />
-        
-        {/* Trump Reveal Animation */}
-        <TrumpRevealAnimation
-          visible={showTrumpReveal}
-          trumpCard={trumpCard}
-          onComplete={() => setShowTrumpReveal(false)}
-        />
-        
-        {/* Trick Win Badge - positioned near winning player */}
-        {showTrickWinBadge && (
-          <View
-            style={{
-              position: "absolute",
-              ...getPlayerBadgePosition(trickWinnerIndex),
-              zIndex: 50,
-            }}
-            pointerEvents="none"
-          >
-            <TrickWinBadge
-              visible={showTrickWinBadge}
-              teamIndex={trickWinTeam}
-              isYourTeam={trickWinTeam === 0}
-              onHide={() => setShowTrickWinBadge(false)}
-            />
-          </View>
-        )}
-        
-        {/* Top Trump Badge - near the player who played it */}
-        {showTopTrump && (
-          <View
-            style={{
-              position: "absolute",
-              ...getPlayerBadgePosition(topTrumpPlayerIndex),
-              zIndex: 50,
-            }}
-            pointerEvents="none"
-          >
-            <TopTrumpBadge
-              visible={showTopTrump}
-              card={topTrumpCard}
-              trumpSuit={trumpSuit}
-              playerName={topTrumpPlayer}
-              isYou={topTrumpIsYou}
-              onHide={() => setShowTopTrump(false)}
-            />
-          </View>
-        )}
-        
-        {/* Perfect Trick Badge - center of table */}
-        {showPerfectTrick && (
-          <View
-            style={{
-              position: "absolute",
-              top: SCREEN_HEIGHT * 0.35,
-              left: SCREEN_WIDTH / 2 - 40,
-              zIndex: 50,
-            }}
-            pointerEvents="none"
-          >
-            <PerfectTrickBadge
-              visible={showPerfectTrick}
-              onHide={() => setShowPerfectTrick(false)}
-            />
-          </View>
-        )}
-        
-        {/* Rob Badge */}
-        <RobBadge
-          visible={showRobBadge}
-          playerName={robPlayerName}
-          isYou={robIsYou}
-          onComplete={() => setShowRobBadge(false)}
-        />
-        
-        {/* Hand Win Overlay */}
-        <HandWinOverlay
-          visible={showHandWinOverlay}
-          winningTeam={handWinTeam}
-          isYourTeam={handWinTeam === 1}
-          handsWon={handsWon}
-          finalScore={handWinScores}
-          onComplete={() => {
-            setShowHandWinOverlay(false);
-            setHandWinOverlayComplete(true); // Signal that overlay animation is done
+      {/* Invalid Play Alert Modal */}
+      <AlertModal
+        visible={alertVisible}
+        title={alertTitle}
+        message={alertMessage}
+        type="error"
+        onOk={() => setAlertVisible(false)}
+        okText="Got it"
+      />
+
+      {/* Trump Reveal Animation */}
+      <TrumpRevealAnimation
+        visible={showTrumpReveal}
+        trumpCard={trumpCard}
+        onComplete={() => setShowTrumpReveal(false)}
+      />
+
+      {/* Trick Win Badge */}
+      {showTrickWinBadge && (
+        <View
+          style={{
+            position: "absolute",
+            top: SCREEN_HEIGHT * 0.35,
+            left: SCREEN_WIDTH / 2 - 40,
+            zIndex: 50,
           }}
-        />
-        
-        {/* Comeback Win Badge - near center */}
-        {showComebackWin && (
-          <View
-            style={{
-              position: "absolute",
-              top: SCREEN_HEIGHT * 0.35,
-              left: SCREEN_WIDTH / 2 - 40,
-              zIndex: 60,
-            }}
-            pointerEvents="none"
-          >
-            <ComebackWinBadge
-              visible={showComebackWin}
-              teamIndex={comebackTeam}
-              isYourTeam={comebackTeam === 0}
-              onHide={() => setShowComebackWin(false)}
-            />
-          </View>
-        )}
+          pointerEvents="none"
+        >
+          <TrickWinBadge
+            visible={showTrickWinBadge}
+            teamIndex={trickWinTeam}
+            isYourTeam={trickWinnerIndex === humanPlayerIndex || (scoringMode === "team" && trickWinTeam === 0)}
+            onHide={() => setShowTrickWinBadge(false)}
+          />
+        </View>
+      )}
+
+      {/* Top Trump Badge */}
+      {showTopTrump && (
+        <View
+          style={{
+            position: "absolute",
+            top: SCREEN_HEIGHT * 0.35,
+            left: SCREEN_WIDTH / 2 - 40,
+            zIndex: 50,
+          }}
+          pointerEvents="none"
+        >
+          <TopTrumpBadge
+            visible={showTopTrump}
+            card={topTrumpCard}
+            trumpSuit={trumpSuit}
+            playerName={topTrumpPlayer}
+            isYou={topTrumpIsYou}
+            onHide={() => setShowTopTrump(false)}
+          />
+        </View>
+      )}
+
+      {/* Perfect Trick Badge */}
+      {showPerfectTrick && (
+        <View
+          style={{
+            position: "absolute",
+            top: SCREEN_HEIGHT * 0.35,
+            left: SCREEN_WIDTH / 2 - 40,
+            zIndex: 50,
+          }}
+          pointerEvents="none"
+        >
+          <PerfectTrickBadge
+            visible={showPerfectTrick}
+            onHide={() => setShowPerfectTrick(false)}
+          />
+        </View>
+      )}
+
+      {/* Rob Badge */}
+      <RobBadge
+        visible={showRobBadge}
+        playerName={robPlayerName}
+        isYou={robIsYou}
+        onComplete={() => setShowRobBadge(false)}
+      />
+
+      {/* Hand Win Overlay */}
+      <HandWinOverlay
+        visible={showHandWinOverlay}
+        winnerLabel={handWinLabel}
+        isYourWin={handWinIsYours}
+        scoringMode={scoringMode}
+        handsWon={handsWon}
+        finalScore={handWinScore}
+        playerNames={players.map(p => p.name)}
+        individualScores={scores.individual}
+        humanPlayerIndex={humanPlayerIndex}
+        onComplete={() => {
+          setShowHandWinOverlay(false);
+          setHandWinOverlayComplete(true);
+        }}
+      />
+
+      {/* Comeback Win Badge */}
+      {showComebackWin && (
+        <View
+          style={{
+            position: "absolute",
+            top: SCREEN_HEIGHT * 0.35,
+            left: SCREEN_WIDTH / 2 - 40,
+            zIndex: 60,
+          }}
+          pointerEvents="none"
+        >
+          <ComebackWinBadge
+            visible={showComebackWin}
+            teamIndex={comebackTeam}
+            isYourTeam={comebackTeam === 0}
+            onHide={() => setShowComebackWin(false)}
+          />
+        </View>
+      )}
     </View>
   );
 }

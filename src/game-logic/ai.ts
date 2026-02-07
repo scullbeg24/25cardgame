@@ -3,13 +3,14 @@
  * Easy: random legal move
  * Medium: basic strategy (lead trumps, follow partner, trump when useful)
  * Hard: card counting, probability, partner signaling, aggressive when behind
+ * Supports both team (4 players) and individual (2-3, 5-10 players) modes
  */
 
 import type { Card } from "./cards";
 import type { Suit } from "./cards";
 import { isTrump, getTrumpRank, getNonTrumpRank } from "./cards";
 import { getValidMoves, type RuleOptions } from "./rules";
-import { getTeamForPlayer } from "./scoring";
+import { getTeamForPlayer, type Scores } from "./scoring";
 import type { AIDifficulty } from "../utils/constants";
 
 export type TrickEntry = Card | { card: Card };
@@ -21,8 +22,9 @@ export interface AIGameContext {
   ledSuit: Suit | null;
   currentPlayerIndex: number;
   firstPlayerThisTrick: number;
-  scores: { team1: number; team2: number };
+  scores: Scores;
   ruleOptions?: RuleOptions;
+  numPlayers: number;
 }
 
 function getTrickCards(trick: TrickEntry[]): Card[] {
@@ -70,9 +72,7 @@ function selectMediumCard(
   context: AIGameContext,
   validMoves: Card[]
 ): Card {
-  const { currentTrick, trumpSuit, ledSuit, firstPlayerThisTrick, currentPlayerIndex } = context;
-
-  if (currentTrick.length === 0) {
+  if (context.currentTrick.length === 0) {
     return selectCardToLead(context, validMoves);
   }
   return selectCardToFollow(context, validMoves);
@@ -133,39 +133,47 @@ function selectCardToFollow(
   context: AIGameContext,
   validMoves: Card[]
 ): Card {
-  const { currentTrick, trumpSuit, ledSuit, firstPlayerThisTrick, currentPlayerIndex } = context;
+  const { currentTrick, trumpSuit, ledSuit, firstPlayerThisTrick, currentPlayerIndex, numPlayers } = context;
   const trickCards = getTrickCards(currentTrick);
   const firstCard = trickCards[0];
   const effectiveLedSuit = ledSuit ?? (firstCard?.suit as Suit) ?? trumpSuit;
 
-  const partnerIndex = (currentPlayerIndex + 2) % 4;
-  const partnerPlayedIndex = trickCards.findIndex(
-    (_, i) => (firstPlayerThisTrick + i) % 4 === partnerIndex
-  );
-  const partnerCard =
-    partnerPlayedIndex >= 0 ? trickCards[partnerPlayedIndex] : null;
+  // Partner logic only applies in team mode (4 players)
+  const isTeamMode = context.scores.mode === "team";
+  const partnerIndex = isTeamMode ? (currentPlayerIndex + 2) % 4 : -1;
 
-  const winningIdx = getWinningIndex(trickCards, effectiveLedSuit, trumpSuit);
-  const winningPlayer = (firstPlayerThisTrick + winningIdx) % 4;
-  const partnerWinning = winningPlayer === partnerIndex;
+  if (isTeamMode && partnerIndex >= 0) {
+    const partnerPlayedIndex = trickCards.findIndex(
+      (_, i) => (firstPlayerThisTrick + i) % numPlayers === partnerIndex
+    );
+    const partnerCard =
+      partnerPlayedIndex >= 0 ? trickCards[partnerPlayedIndex] : null;
 
-  if (partnerWinning && partnerCard) {
-    return validMoves.reduce((lowest, c) => {
-      const rank = isTrump(c, trumpSuit)
-        ? getTrumpRank(c, trumpSuit)
-        : getNonTrumpRank(c, effectiveLedSuit);
-      const lowestRank = isTrump(lowest, trumpSuit)
-        ? getTrumpRank(lowest, trumpSuit)
-        : getNonTrumpRank(lowest, effectiveLedSuit);
-      return rank < lowestRank ? c : lowest;
-    });
+    const winningIdx = getWinningIndex(trickCards, effectiveLedSuit, trumpSuit);
+    const winningPlayer = (firstPlayerThisTrick + winningIdx) % numPlayers;
+    const partnerWinning = winningPlayer === partnerIndex;
+
+    if (partnerWinning && partnerCard) {
+      // Partner is winning - play lowest card
+      return validMoves.reduce((lowest, c) => {
+        const rank = isTrump(c, trumpSuit)
+          ? getTrumpRank(c, trumpSuit)
+          : getNonTrumpRank(c, effectiveLedSuit);
+        const lowestRank = isTrump(lowest, trumpSuit)
+          ? getTrumpRank(lowest, trumpSuit)
+          : getNonTrumpRank(lowest, effectiveLedSuit);
+        return rank < lowestRank ? c : lowest;
+      });
+    }
   }
 
+  // Try to win the trick
   const canWin = validMoves.filter((c) =>
     wouldBeatTrick(c, trickCards, effectiveLedSuit, trumpSuit, firstPlayerThisTrick)
   );
 
   if (canWin.length > 0) {
+    // Win with the cheapest winning card
     return canWin.reduce((best, c) => {
       const rank = isTrump(c, trumpSuit)
         ? getTrumpRank(c, trumpSuit)
@@ -177,6 +185,7 @@ function selectCardToFollow(
     });
   }
 
+  // Can't win - play lowest card
   return validMoves.reduce((lowest, c) => {
     const rank = isTrump(c, trumpSuit)
       ? getTrumpRank(c, trumpSuit)
@@ -220,7 +229,7 @@ function wouldBeatTrick(
   trick: Card[],
   ledSuit: Suit,
   trumpSuit: Suit,
-  firstPlayer: number
+  _firstPlayer: number
 ): boolean {
   const winningIdx = getWinningIndex(trick, ledSuit, trumpSuit);
   const winningCard = trick[winningIdx];
@@ -241,11 +250,7 @@ function selectHardCard(
   context: AIGameContext,
   validMoves: Card[]
 ): Card {
-  const aggressive = shouldPlayAggressively(
-    context.scores.team1,
-    context.scores.team2,
-    getTeamForPlayer(context.currentPlayerIndex)
-  );
+  const aggressive = shouldPlayAggressively(context.scores, context.currentPlayerIndex);
 
   const mediumChoice = selectMediumCard(context, validMoves);
 
@@ -296,26 +301,36 @@ function selectHardCard(
   return mediumChoice;
 }
 
+/** Determine if AI should play aggressively based on scores */
 function shouldPlayAggressively(
-  team1Score: number,
-  team2Score: number,
-  myTeam: 1 | 2
+  scores: Scores,
+  currentPlayerIndex: number
 ): boolean {
-  const myScore = myTeam === 1 ? team1Score : team2Score;
-  const oppScore = myTeam === 1 ? team2Score : team1Score;
-  return myScore < oppScore;
+  if (scores.mode === "team") {
+    const myTeam = getTeamForPlayer(currentPlayerIndex, "team")!;
+    const myScore = myTeam === 1 ? scores.team1 : scores.team2;
+    const oppScore = myTeam === 1 ? scores.team2 : scores.team1;
+    return myScore < oppScore;
+  } else {
+    // Individual mode: aggressive if any opponent has higher score
+    const myScore = scores.individual[currentPlayerIndex] ?? 0;
+    const maxOppScore = Math.max(
+      ...scores.individual.filter((_, i) => i !== currentPlayerIndex)
+    );
+    return myScore < maxOppScore;
+  }
 }
 
-/** Delay for AI "thinking" - returns ms based on difficulty */
+/** Delay for AI "thinking" - returns ms based on difficulty. Minimum 1.5s for natural pacing. */
 export function getAIDelay(difficulty: AIDifficulty): number {
   switch (difficulty) {
     case "easy":
-      return 500 + Math.random() * 500;
+      return 1500 + Math.random() * 300;
     case "medium":
-      return 700 + Math.random() * 500;
+      return 1500 + Math.random() * 400;
     case "hard":
-      return 1000 + Math.random() * 500;
+      return 1500 + Math.random() * 500;
     default:
-      return 500;
+      return 1500;
   }
 }

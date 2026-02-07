@@ -1,5 +1,6 @@
 /**
- * Full-screen victory celebration overlay for when a team wins the game
+ * Full-screen victory celebration overlay for when someone wins the game
+ * Supports both team mode and individual mode.
  */
 
 import { useEffect, useState } from "react";
@@ -17,19 +18,29 @@ import Animated, {
 import { colors, borderRadius, shadows } from "../theme";
 import Confetti from "./Confetti";
 import Sparkle from "./Sparkle";
+import type { ScoreMode } from "../utils/constants";
+import type { HandsWon } from "../game-logic/scoring";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface VictoryOverlayProps {
   visible: boolean;
   isVictory: boolean;
-  handsWon: { team1: number; team2: number };
+  scoringMode: ScoreMode;
+  handsWon: HandsWon;
+  /** Player names (for individual mode leaderboard) */
+  playerNames?: string[];
+  /** Human player index */
+  humanPlayerIndex?: number;
 }
 
 export default function VictoryOverlay({
   visible,
   isVictory,
+  scoringMode,
   handsWon,
+  playerNames = [],
+  humanPlayerIndex = 0,
 }: VictoryOverlayProps) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSparkle, setShowSparkle] = useState(false);
@@ -145,9 +156,9 @@ export default function VictoryOverlay({
 
   const title = isVictory ? "VICTORY!" : "DEFEAT";
   const subtitle = isVictory
-    ? "Congratulations! You've won the game!"
+    ? (scoringMode === "team" ? "Congratulations! Your team wins the game!" : "Congratulations! You've won the game!")
     : "Better luck next time!";
-  const emoji = isVictory ? "🏆" : "😔";
+  const emoji = isVictory ? "\uD83C\uDFC6" : "\uD83D\uDE14";
   const accentColor = isVictory ? colors.gold.primary : colors.teams.team2.primary;
 
   return (
@@ -217,59 +228,142 @@ export default function VictoryOverlay({
         <Animated.View style={[styles.scoreCard, scoreStyle]}>
           <Text style={styles.scoreTitle}>Final Score</Text>
 
-          <View style={styles.scoreRow}>
-            <View style={styles.teamScore}>
-              <Text style={[styles.teamLabel, { color: colors.teams.team1.light }]}>
-                Your Team
-              </Text>
-              <View style={styles.handsRow}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t1-${i}`}
-                    style={[
-                      styles.handIndicator,
-                      {
-                        backgroundColor:
-                          i < handsWon.team1
-                            ? colors.teams.team1.primary
-                            : "transparent",
-                        borderColor: colors.teams.team1.primary,
-                      },
-                    ]}
-                  />
-                ))}
+          {scoringMode === "team" ? (
+            /* Team mode: classic 2-column layout */
+            <View style={styles.scoreRow}>
+              <View style={styles.teamScore}>
+                <Text style={[styles.teamLabel, { color: colors.teams.team1.light }]}>
+                  Your Team
+                </Text>
+                <View style={styles.handsRow}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <View
+                      key={`t1-${i}`}
+                      style={[
+                        styles.handIndicator,
+                        {
+                          backgroundColor:
+                            i < handsWon.team1
+                              ? colors.teams.team1.primary
+                              : "transparent",
+                          borderColor: colors.teams.team1.primary,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.handsCount}>{handsWon.team1} hands</Text>
               </View>
-              <Text style={styles.handsCount}>{handsWon.team1} hands</Text>
-            </View>
 
-            <View style={styles.divider}>
-              <Text style={styles.dividerText}>vs</Text>
-            </View>
-
-            <View style={styles.teamScore}>
-              <Text style={[styles.teamLabel, { color: colors.teams.team2.light }]}>
-                Opponents
-              </Text>
-              <View style={styles.handsRow}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t2-${i}`}
-                    style={[
-                      styles.handIndicator,
-                      {
-                        backgroundColor:
-                          i < handsWon.team2
-                            ? colors.teams.team2.primary
-                            : "transparent",
-                        borderColor: colors.teams.team2.primary,
-                      },
-                    ]}
-                  />
-                ))}
+              <View style={styles.divider}>
+                <Text style={styles.dividerText}>vs</Text>
               </View>
-              <Text style={styles.handsCount}>{handsWon.team2} hands</Text>
+
+              <View style={styles.teamScore}>
+                <Text style={[styles.teamLabel, { color: colors.teams.team2.light }]}>
+                  Opponents
+                </Text>
+                <View style={styles.handsRow}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <View
+                      key={`t2-${i}`}
+                      style={[
+                        styles.handIndicator,
+                        {
+                          backgroundColor:
+                            i < handsWon.team2
+                              ? colors.teams.team2.primary
+                              : "transparent",
+                          borderColor: colors.teams.team2.primary,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.handsCount}>{handsWon.team2} hands</Text>
+              </View>
             </View>
-          </View>
+          ) : (
+            /* Individual mode: leaderboard */
+            <View style={{ width: "100%" }}>
+              {playerNames
+                .map((name, idx) => ({
+                  name: idx === humanPlayerIndex ? "You" : name,
+                  hands: handsWon.individual[idx] ?? 0,
+                  isYou: idx === humanPlayerIndex,
+                }))
+                .sort((a, b) => b.hands - a.hands)
+                .map((entry, i) => (
+                  <View
+                    key={i}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      backgroundColor: entry.isYou ? "rgba(59, 130, 246, 0.15)" : "transparent",
+                      borderRadius: 8,
+                      marginBottom: 2,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text
+                        style={{
+                          color: colors.text.muted,
+                          fontSize: 12,
+                          fontWeight: "bold",
+                          width: 18,
+                        }}
+                      >
+                        #{i + 1}
+                      </Text>
+                      <Text
+                        style={{
+                          color: entry.isYou ? colors.teams.team1.light : colors.text.primary,
+                          fontSize: 14,
+                          fontWeight: entry.isYou ? "bold" : "600",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {entry.name}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={{ flexDirection: "row", gap: 3 }}>
+                        {Array.from({ length: 5 }).map((_, j) => (
+                          <View
+                            key={j}
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: 7,
+                              backgroundColor:
+                                j < entry.hands
+                                  ? (entry.isYou ? colors.teams.team1.primary : colors.teams.team2.primary)
+                                  : "transparent",
+                              borderWidth: 2,
+                              borderColor: entry.isYou ? colors.teams.team1.primary : colors.teams.team2.primary,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <Text
+                        style={{
+                          color: colors.text.primary,
+                          fontSize: 13,
+                          fontWeight: "600",
+                          minWidth: 45,
+                          textAlign: "right",
+                        }}
+                      >
+                        {entry.hands} hand{entry.hands !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+            </View>
+          )}
         </Animated.View>
       </View>
     </View>

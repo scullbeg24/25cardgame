@@ -1,5 +1,6 @@
 /**
- * Full-screen overlay celebration when a team wins a hand
+ * Full-screen overlay celebration when someone wins a hand
+ * Supports both team mode and individual mode.
  */
 
 import { useEffect } from "react";
@@ -16,24 +17,42 @@ import Animated, {
 } from "react-native-reanimated";
 import { colors, borderRadius, shadows } from "../theme";
 import Confetti from "./Confetti";
+import type { ScoreMode } from "../utils/constants";
+import type { HandsWon } from "../game-logic/scoring";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface HandWinOverlayProps {
   visible: boolean;
-  winningTeam: 1 | 2;
-  isYourTeam: boolean;
-  handsWon: { team1: number; team2: number };
-  finalScore: { team1: number; team2: number };
+  /** Label of the winner ("Your Team", "Opponents", player name, or "You") */
+  winnerLabel: string;
+  /** Whether this is the human player's win */
+  isYourWin: boolean;
+  /** Scoring mode */
+  scoringMode: ScoreMode;
+  /** Hands won data */
+  handsWon: HandsWon;
+  /** Final hand score to display */
+  finalScore: number;
+  /** Player names (for individual leaderboard) */
+  playerNames?: string[];
+  /** Individual scores (for individual leaderboard) */
+  individualScores?: number[];
+  /** Human player index */
+  humanPlayerIndex?: number;
   onComplete?: () => void;
 }
 
 export default function HandWinOverlay({
   visible,
-  winningTeam,
-  isYourTeam,
+  winnerLabel,
+  isYourWin,
+  scoringMode,
   handsWon,
   finalScore,
+  playerNames = [],
+  individualScores = [],
+  humanPlayerIndex = 0,
   onComplete,
 }: HandWinOverlayProps) {
   const backdropOpacity = useSharedValue(0);
@@ -119,10 +138,12 @@ export default function HandWinOverlay({
 
   if (!visible) return null;
 
-  const teamColor = winningTeam === 1 ? colors.teams.team1 : colors.teams.team2;
-  const title = isYourTeam ? "Hand Won!" : "Hand Lost";
-  const emoji = isYourTeam ? "🏆" : "😔";
-  const subtitle = isYourTeam ? "Your team takes the hand!" : "Opponents win this hand";
+  const title = isYourWin ? "Hand Won!" : "Hand Lost";
+  const emoji = isYourWin ? "\uD83C\uDFC6" : "\uD83D\uDE14";
+  const subtitle = isYourWin
+    ? (scoringMode === "team" ? "Your team takes the hand!" : "You take the hand!")
+    : `${winnerLabel} wins this hand`;
+  const accentColor = isYourWin ? colors.gold.primary : colors.teams.team2.primary;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -135,8 +156,8 @@ export default function HandWinOverlay({
         ]}
       />
 
-      {/* Brief confetti for your team winning */}
-      {isYourTeam && (
+      {/* Brief confetti for your win */}
+      {isYourWin && (
         <Confetti visible={visible} intensity="medium" duration={2000} />
       )}
 
@@ -146,7 +167,7 @@ export default function HandWinOverlay({
           style={[
             styles.card,
             {
-              borderColor: isYourTeam ? colors.gold.primary : teamColor.primary,
+              borderColor: isYourWin ? colors.gold.primary : accentColor,
             },
             cardStyle,
           ]}
@@ -158,7 +179,7 @@ export default function HandWinOverlay({
           <Text
             style={[
               styles.title,
-              { color: isYourTeam ? colors.gold.primary : teamColor.light },
+              { color: isYourWin ? colors.gold.primary : accentColor },
             ]}
           >
             {title}
@@ -167,65 +188,130 @@ export default function HandWinOverlay({
           {/* Subtitle */}
           <Text style={styles.subtitle}>{subtitle}</Text>
 
-          {/* Score display */}
+          {/* Score display - varies by mode */}
           <Animated.View style={[styles.scoreContainer, scoreStyle]}>
-            <View style={styles.scoreBox}>
-              <Text style={[styles.scoreLabel, { color: colors.teams.team1.light }]}>
-                Your Team
-              </Text>
-              <Text style={styles.scoreValue}>{finalScore.team1}</Text>
-            </View>
-            <Text style={styles.vs}>vs</Text>
-            <View style={styles.scoreBox}>
-              <Text style={[styles.scoreLabel, { color: colors.teams.team2.light }]}>
-                Opponents
-              </Text>
-              <Text style={styles.scoreValue}>{finalScore.team2}</Text>
-            </View>
+            {scoringMode === "team" ? (
+              /* Team mode: Your Team vs Opponents */
+              <>
+                <View style={styles.scoreBox}>
+                  <Text style={[styles.scoreLabel, { color: colors.teams.team1.light }]}>
+                    Your Team
+                  </Text>
+                  <Text style={styles.scoreValue}>{finalScore}</Text>
+                </View>
+              </>
+            ) : (
+              /* Individual mode: Winner's score */
+              <View style={styles.scoreBox}>
+                <Text style={[styles.scoreLabel, { color: isYourWin ? colors.gold.primary : colors.text.secondary }]}>
+                  {winnerLabel}
+                </Text>
+                <Text style={styles.scoreValue}>{finalScore}</Text>
+                <Text style={[styles.scoreLabel, { color: colors.text.muted, marginTop: 2 }]}>
+                  points
+                </Text>
+              </View>
+            )}
           </Animated.View>
 
           {/* Hands won display */}
           <Animated.View style={[styles.handsContainer, handsStyle]}>
             <Text style={styles.handsLabel}>Hands Won</Text>
-            <View style={styles.handsDisplay}>
-              {/* Team 1 hands */}
-              <View style={styles.handsTeam}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t1-${i}`}
-                    style={[
-                      styles.handDot,
-                      {
-                        backgroundColor:
-                          i < handsWon.team1
-                            ? colors.teams.team1.primary
-                            : colors.background.primary,
-                        borderColor: colors.teams.team1.primary,
-                      },
-                    ]}
-                  />
-                ))}
+            {scoringMode === "team" ? (
+              /* Team mode: dot indicators */
+              <View style={styles.handsDisplay}>
+                {/* Team 1 hands */}
+                <View style={styles.handsTeam}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <View
+                      key={`t1-${i}`}
+                      style={[
+                        styles.handDot,
+                        {
+                          backgroundColor:
+                            i < handsWon.team1
+                              ? colors.teams.team1.primary
+                              : colors.background.primary,
+                          borderColor: colors.teams.team1.primary,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.handsVs}>—</Text>
+                {/* Team 2 hands */}
+                <View style={styles.handsTeam}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <View
+                      key={`t2-${i}`}
+                      style={[
+                        styles.handDot,
+                        {
+                          backgroundColor:
+                            i < handsWon.team2
+                              ? colors.teams.team2.primary
+                              : colors.background.primary,
+                          borderColor: colors.teams.team2.primary,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
               </View>
-              <Text style={styles.handsVs}>—</Text>
-              {/* Team 2 hands */}
-              <View style={styles.handsTeam}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <View
-                    key={`t2-${i}`}
-                    style={[
-                      styles.handDot,
-                      {
-                        backgroundColor:
-                          i < handsWon.team2
-                            ? colors.teams.team2.primary
-                            : colors.background.primary,
-                        borderColor: colors.teams.team2.primary,
-                      },
-                    ]}
-                  />
-                ))}
+            ) : (
+              /* Individual mode: compact leaderboard */
+              <View style={{ width: "100%" }}>
+                {playerNames
+                  .map((name, idx) => ({
+                    name: idx === humanPlayerIndex ? "You" : name,
+                    hands: handsWon.individual[idx] ?? 0,
+                    isYou: idx === humanPlayerIndex,
+                  }))
+                  .sort((a, b) => b.hands - a.hands)
+                  .slice(0, 4) // Show top 4
+                  .map((entry, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        paddingVertical: 2,
+                        paddingHorizontal: 8,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: entry.isYou ? colors.teams.team1.light : colors.text.secondary,
+                          fontSize: 11,
+                          fontWeight: entry.isYou ? "bold" : "normal",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {entry.name}
+                      </Text>
+                      <View style={{ flexDirection: "row", gap: 3 }}>
+                        {Array.from({ length: 5 }).map((_, j) => (
+                          <View
+                            key={j}
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: 4,
+                              backgroundColor:
+                                j < entry.hands
+                                  ? (entry.isYou ? colors.teams.team1.primary : colors.teams.team2.primary)
+                                  : colors.background.primary,
+                              borderWidth: 1,
+                              borderColor: entry.isYou ? colors.teams.team1.primary : colors.teams.team2.primary,
+                            }}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                  ))}
               </View>
-            </View>
+            )}
           </Animated.View>
         </Animated.View>
       </View>

@@ -64,7 +64,7 @@ export default function PlayerSlot({ player, slotNumber, isHost }: PlayerSlotPro
           }}
         >
           <Text style={{ fontSize: 24, fontWeight: 'bold', color: teamColor }}>
-            {player.displayName.charAt(0).toUpperCase()}
+            {(player.displayName || '?').charAt(0).toUpperCase()}
           </Text>
         </View>
 

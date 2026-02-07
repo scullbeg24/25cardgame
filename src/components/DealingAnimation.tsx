@@ -1,38 +1,54 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { View, Text, Dimensions, StyleSheet } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
-  withSequence,
   runOnJS,
   Easing,
 } from "react-native-reanimated";
 import type { Card } from "../game-logic/cards";
 import { playCardDeal } from "../utils/sounds";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-// Player positions relative to center
-const PLAYER_POSITIONS = [
-  { x: 0, y: -120, label: "North" },   // Top
-  { x: 150, y: 0, label: "East" },     // Right
-  { x: 0, y: 120, label: "South" },    // Bottom (You)
-  { x: -150, y: 0, label: "West" },    // Left
-];
-
 const DEAL_DURATION = 150;
 const DELAY_BETWEEN_CARDS = 100;
+
+/**
+ * Generate dealing positions for variable player count.
+ * Human (last index) is always at bottom.
+ * Others distributed evenly clockwise.
+ */
+function getDealingPositions(numPlayers: number, playerNames: string[]): Array<{ x: number; y: number; label: string }> {
+  const positions: Array<{ x: number; y: number; label: string }> = [];
+  const humanIndex = numPlayers - 1;
+  const angleStep = (2 * Math.PI) / numPlayers;
+  const humanAngle = Math.PI / 2; // bottom
+
+  const radiusX = 150;
+  const radiusY = 120;
+
+  for (let i = 0; i < numPlayers; i++) {
+    const offset = (i - humanIndex + numPlayers) % numPlayers;
+    const angle = humanAngle + offset * angleStep;
+    positions.push({
+      x: radiusX * Math.sin(angle),
+      y: -radiusY * Math.cos(angle),
+      label: i === humanIndex ? "You" : (playerNames[i] || `P${i + 1}`),
+    });
+  }
+  return positions;
+}
 
 interface DealingCardProps {
   index: number;
   playerIndex: number;
+  targetPos: { x: number; y: number };
   onComplete?: () => void;
   isLastCard: boolean;
 }
 
-function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCardProps) {
+function DealingCard({ index, playerIndex, targetPos, onComplete, isLastCard }: DealingCardProps) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const scale = useSharedValue(0.3);
@@ -40,13 +56,12 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
   const rotate = useSharedValue(0);
   const hasPlayedSound = useRef(false);
 
-  const targetPos = PLAYER_POSITIONS[playerIndex];
   // Stagger cards slightly within each player's hand
   const cardOffset = (index % 5) * 15 - 30;
 
   useEffect(() => {
     const delay = index * DELAY_BETWEEN_CARDS;
-    
+
     // Play deal sound for this card (staggered)
     const soundTimeout = setTimeout(() => {
       if (!hasPlayedSound.current) {
@@ -54,7 +69,7 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
         playCardDeal();
       }
     }, delay);
-    
+
     // Animate card moving to player position
     translateX.value = withDelay(
       delay,
@@ -63,7 +78,7 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
         easing: Easing.out(Easing.cubic),
       })
     );
-    
+
     translateY.value = withDelay(
       delay,
       withTiming(targetPos.y, {
@@ -71,7 +86,7 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
         easing: Easing.out(Easing.cubic),
       })
     );
-    
+
     scale.value = withDelay(
       delay,
       withTiming(0.5, {
@@ -122,26 +137,38 @@ function DealingCard({ index, playerIndex, onComplete, isLastCard }: DealingCard
 interface DealingAnimationProps {
   playerHands: Card[][];
   onComplete: () => void;
+  numPlayers?: number;
+  playerNames?: string[];
 }
 
-export default function DealingAnimation({ playerHands, onComplete }: DealingAnimationProps) {
+export default function DealingAnimation({
+  playerHands,
+  onComplete,
+  numPlayers = 4,
+  playerNames = [],
+}: DealingAnimationProps) {
   const [cards, setCards] = useState<{ index: number; playerIndex: number }[]>([]);
 
+  const positions = useMemo(
+    () => getDealingPositions(numPlayers, playerNames),
+    [numPlayers, playerNames]
+  );
+
   useEffect(() => {
-    // Create dealing sequence: round-robin dealing like real poker
+    // Create dealing sequence: round-robin dealing
     const dealingOrder: { index: number; playerIndex: number }[] = [];
     const cardsPerPlayer = 5;
-    
+
     let cardIndex = 0;
     for (let round = 0; round < cardsPerPlayer; round++) {
-      for (let player = 0; player < 4; player++) {
+      for (let player = 0; player < numPlayers; player++) {
         dealingOrder.push({ index: cardIndex, playerIndex: player });
         cardIndex++;
       }
     }
-    
+
     setCards(dealingOrder);
-  }, []);
+  }, [numPlayers]);
 
   if (cards.length === 0) return null;
 
@@ -151,11 +178,11 @@ export default function DealingAnimation({ playerHands, onComplete }: DealingAni
       <View style={styles.deckContainer}>
         <View style={styles.deck}>
           {[...Array(5)].map((_, i) => (
-            <View 
-              key={i} 
+            <View
+              key={i}
               style={[
                 styles.deckCard,
-                { 
+                {
                   transform: [
                     { translateY: -i * 2 },
                     { translateX: -i * 0.5 },
@@ -178,13 +205,14 @@ export default function DealingAnimation({ playerHands, onComplete }: DealingAni
           key={i}
           index={card.index}
           playerIndex={card.playerIndex}
+          targetPos={positions[card.playerIndex]}
           isLastCard={i === cards.length - 1}
           onComplete={onComplete}
         />
       ))}
 
       {/* Player position indicators */}
-      {PLAYER_POSITIONS.map((pos, idx) => (
+      {positions.map((pos, idx) => (
         <View
           key={idx}
           style={[
@@ -197,10 +225,13 @@ export default function DealingAnimation({ playerHands, onComplete }: DealingAni
             },
           ]}
         >
-          <Text style={[
-            styles.playerLabel,
-            idx % 2 === 0 ? styles.team1Label : styles.team2Label
-          ]}>
+          <Text
+            style={[
+              styles.playerLabel,
+              { color: idx === numPlayers - 1 ? "#60a5fa" : "#ccc" },
+            ]}
+            numberOfLines={1}
+          >
             {pos.label}
           </Text>
         </View>
@@ -279,13 +310,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   playerLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
-  },
-  team1Label: {
-    color: "#60a5fa",
-  },
-  team2Label: {
-    color: "#f87171",
   },
 });

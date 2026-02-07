@@ -46,7 +46,7 @@ export default function FriendListItem({
           }}
         >
           <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.gold.primary }}>
-            {friend.displayName.charAt(0).toUpperCase()}
+            {(friend.displayName || '?').charAt(0).toUpperCase()}
           </Text>
         </View>
         {/* Online Status Badge */}

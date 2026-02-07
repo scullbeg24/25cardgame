@@ -315,7 +315,7 @@ export default function FriendsScreen() {
                                 }}
                               >
                                 <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.gold.primary }}>
-                                  {profile.displayName.charAt(0).toUpperCase()}
+                                  {(profile.displayName || profile.username || '?').charAt(0).toUpperCase()}
                                 </Text>
                               </View>
                               <View style={{ flex: 1 }}>
@@ -399,7 +399,7 @@ export default function FriendsScreen() {
                               }}
                             >
                               <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.gold.primary }}>
-                                {profile.displayName.charAt(0).toUpperCase()}
+                                {(profile.displayName || profile.username || '?').charAt(0).toUpperCase()}
                               </Text>
                             </View>
                             <View style={{ flex: 1 }}>
