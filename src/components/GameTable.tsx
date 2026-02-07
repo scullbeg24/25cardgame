@@ -214,11 +214,29 @@ export default function GameTable({
     );
   }
 
-  // For other player counts: grid layout
-  // Top row: opponents, Bottom: human player's card, Center: played cards
-  const otherPlayers = Array.from({ length: playerCount }, (_, i) => i).filter(
-    (i) => i !== humanPlayerIndex
-  );
+  // For other player counts: rectangular layout
+  // Distribute opponents into left, top, right sides (human is always at bottom)
+  // Seat order: clockwise from human
+  const order = getSeatOrder(playerCount, humanPlayerIndex);
+  // order[0] = human, order[1..n-1] = opponents clockwise
+  const opponents = order.slice(1); // all opponents in clockwise order
+
+  // Distribute opponents: left side (bottom-to-top), top (left-to-right), right side (top-to-bottom)
+  // This creates a U-shape / rectangular seating around the table
+  const distributeSeats = (opps: number[]): { left: number[]; top: number[]; right: number[] } => {
+    const count = opps.length;
+    if (count <= 1) return { left: [], top: opps, right: [] };
+    if (count === 2) return { left: [opps[0]], top: [], right: [opps[1]] };
+    if (count === 3) return { left: [opps[0]], top: [opps[1]], right: [opps[2]] };
+    if (count === 4) return { left: [opps[0]], top: [opps[1], opps[2]], right: [opps[3]] };
+    if (count === 5) return { left: [opps[0], opps[1]], top: [opps[2]], right: [opps[3], opps[4]] };
+    if (count === 6) return { left: [opps[0], opps[1]], top: [opps[2], opps[3]], right: [opps[4], opps[5]] };
+    if (count === 7) return { left: [opps[0], opps[1], opps[2]], top: [opps[3]], right: [opps[4], opps[5], opps[6]] };
+    // 8 opponents (9 players): 3 left, 2 top, 3 right
+    return { left: [opps[0], opps[1], opps[2]], top: [opps[3], opps[4]], right: [opps[5], opps[6], opps[7]] };
+  };
+
+  const { left, top, right } = distributeSeats(opponents);
 
   return (
     <View style={{ flex: 1, margin: 8 }}>
@@ -243,78 +261,136 @@ export default function GameTable({
             padding: 8,
           }}
         >
-          {/* Top area: other players in a wrapping row */}
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              justifyContent: "center",
-              gap: 6,
-              paddingBottom: 4,
-            }}
-          >
-            {otherPlayers.map((idx) => (
-              <View key={idx} style={{ alignItems: "center" }}>
-                <PlayerBadge
-                  playerIndex={idx}
-                  playerNames={playerNames}
-                  playerScores={playerScores}
-                  currentPlayer={currentPlayer}
-                  dealer={dealer}
-                  leadPlayer={leadPlayer}
-                  playerTeamIds={playerTeamIds}
-                  humanPlayerIndex={humanPlayerIndex}
-                />
-              </View>
-            ))}
-          </View>
-
-          {/* Center: played cards in a grid */}
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {currentTrick.length === 0 ? (
-              <View
-                style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 25,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "rgba(0,0,0,0.1)",
-                  borderWidth: 1,
-                  borderColor: colors.gold.dark + "40",
-                  borderStyle: "dashed",
-                }}
-              >
-                <Text style={{ color: colors.text.muted, fontSize: 9 }}>Play</Text>
-              </View>
-            ) : (
-              <View
-                style={{
-                  flexDirection: "row",
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                  gap: 4,
-                }}
-              >
-                {currentTrick.map((tc) => (
-                  <PlayedCard
-                    key={tc.playerIndex}
-                    trick={currentTrick}
-                    playerIndex={tc.playerIndex}
+          {/* Top row of opponents */}
+          {top.length > 0 && (
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 12,
+                paddingBottom: 4,
+              }}
+            >
+              {top.map((idx) => (
+                <View key={idx} style={{ alignItems: "center" }}>
+                  <PlayerBadge
+                    playerIndex={idx}
                     playerNames={playerNames}
-                    lastTrickWinner={lastTrickWinner}
+                    playerScores={playerScores}
+                    currentPlayer={currentPlayer}
+                    dealer={dealer}
+                    leadPlayer={leadPlayer}
                     playerTeamIds={playerTeamIds}
                     humanPlayerIndex={humanPlayerIndex}
+                    seatPosition="top"
                   />
-                ))}
-              </View>
-            )}
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Middle section: Left opponents | Center area | Right opponents */}
+          <View style={{ flex: 1, flexDirection: "row" }}>
+            {/* Left column - ordered bottom-to-top so first opponent is nearest to human */}
+            <View
+              style={{
+                justifyContent: "space-evenly",
+                alignItems: "center",
+                paddingLeft: 2,
+                width: left.length > 0 ? 90 : 0,
+              }}
+            >
+              {[...left].reverse().map((idx) => (
+                <View key={idx} style={{ alignItems: "center", marginVertical: 2 }}>
+                  <PlayerBadge
+                    playerIndex={idx}
+                    playerNames={playerNames}
+                    playerScores={playerScores}
+                    currentPlayer={currentPlayer}
+                    dealer={dealer}
+                    leadPlayer={leadPlayer}
+                    playerTeamIds={playerTeamIds}
+                    humanPlayerIndex={humanPlayerIndex}
+                    seatPosition="left"
+                  />
+                </View>
+              ))}
+            </View>
+
+            {/* Center: played cards */}
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              {currentTrick.length === 0 ? (
+                <View
+                  style={{
+                    width: 50,
+                    height: 50,
+                    borderRadius: 25,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "rgba(0,0,0,0.1)",
+                    borderWidth: 1,
+                    borderColor: colors.gold.dark + "40",
+                    borderStyle: "dashed",
+                  }}
+                >
+                  <Text style={{ color: colors.text.muted, fontSize: 9 }}>Play</Text>
+                </View>
+              ) : (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    justifyContent: "center",
+                    gap: 4,
+                    maxWidth: 200,
+                  }}
+                >
+                  {currentTrick.map((tc) => (
+                    <PlayedCard
+                      key={tc.playerIndex}
+                      trick={currentTrick}
+                      playerIndex={tc.playerIndex}
+                      playerNames={playerNames}
+                      lastTrickWinner={lastTrickWinner}
+                      playerTeamIds={playerTeamIds}
+                      humanPlayerIndex={humanPlayerIndex}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Right column - ordered top-to-bottom so last opponent is nearest to human */}
+            <View
+              style={{
+                justifyContent: "space-evenly",
+                alignItems: "center",
+                paddingRight: 2,
+                width: right.length > 0 ? 90 : 0,
+              }}
+            >
+              {right.map((idx) => (
+                <View key={idx} style={{ alignItems: "center", marginVertical: 2 }}>
+                  <PlayerBadge
+                    playerIndex={idx}
+                    playerNames={playerNames}
+                    playerScores={playerScores}
+                    currentPlayer={currentPlayer}
+                    dealer={dealer}
+                    leadPlayer={leadPlayer}
+                    playerTeamIds={playerTeamIds}
+                    humanPlayerIndex={humanPlayerIndex}
+                    seatPosition="right"
+                  />
+                </View>
+              ))}
+            </View>
           </View>
 
           {/* Bottom: your badge */}
@@ -329,6 +405,7 @@ export default function GameTable({
               playerTeamIds={playerTeamIds}
               humanPlayerIndex={humanPlayerIndex}
               isYou
+              seatPosition="bottom"
             />
           </View>
         </View>
